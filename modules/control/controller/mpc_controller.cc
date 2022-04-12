@@ -350,8 +350,8 @@ Status MPCController::ComputeControlCommand(
   debug->add_matrix_r_updated(matrix_r_updated_(0, 0));
   debug->add_matrix_r_updated(matrix_r_updated_(1, 1));
 
-  Matrix control_matrix = Matrix::Zero(controls_, 1);
-  std::vector<Matrix> control(horizon_, control_matrix);
+  Matrix control_matrix = Matrix::Zero(controls_, 1); // control_matrix 的维度是2x1
+  std::vector<Matrix> control(horizon_, control_matrix); // 是一个 vector，里面包含 10 个 control_matrix
 
   Matrix control_gain_matrix = Matrix::Zero(controls_, basic_state_size_);
   std::vector<Matrix> control_gain(horizon_, control_gain_matrix);
@@ -359,8 +359,8 @@ Status MPCController::ComputeControlCommand(
   Matrix addition_gain_matrix = Matrix::Zero(controls_, 1);
   std::vector<Matrix> addition_gain(horizon_, addition_gain_matrix);
 
-  Matrix reference_state = Matrix::Zero(basic_state_size_, 1);
-  std::vector<Matrix> reference(horizon_, reference_state);
+  Matrix reference_state = Matrix::Zero(basic_state_size_, 1); // 是一个矩阵，维度 6x1
+  std::vector<Matrix> reference(horizon_, reference_state); // 是一个大小为 10 的 vector，里面的每个元素都是 reference_state
 
   Matrix lower_bound(controls_, 1);
   lower_bound << -wheel_single_direction_max_degree_, max_deceleration_;
@@ -387,7 +387,7 @@ Status MPCController::ComputeControlCommand(
   double unconstrained_control = 0.0;
   const double v = VehicleStateProvider::Instance()->linear_velocity();
 
-  std::vector<double> control_cmd(controls_, 0);
+  std::vector<double> control_cmd(controls_, 0); 
   if (FLAGS_use_osqp_solver) {
     apollo::common::math::MpcOsqp mpc_osqp(
         matrix_ad_, matrix_bd_, matrix_q_updated_, matrix_r_updated_,

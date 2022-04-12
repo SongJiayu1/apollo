@@ -29,6 +29,10 @@ using Matrix = Eigen::MatrixXd;
 
 // discrete linear predictive control solver, with control format
 // x(i + 1) = A * x(i) + B * u (i) + C
+// 注：这里并没有构造新的状态空间方程，将 状态量和控制量写在一起。
+// matrix_a - matrix_ad，即离散化后的 A 矩阵
+// matrix_b - matrix_bd
+// matrix_c - matrix_cd
 bool SolveLinearMPC(const Matrix &matrix_a, const Matrix &matrix_b,
                     const Matrix &matrix_c, const Matrix &matrix_q,
                     const Matrix &matrix_r, const Matrix &matrix_lower,
@@ -45,13 +49,15 @@ bool SolveLinearMPC(const Matrix &matrix_a, const Matrix &matrix_b,
     return false;
   }
 
-  size_t horizon = static_cast<size_t>(reference.size());
+  size_t horizon = static_cast<size_t>(reference.size()); // horizon = 10
 
-  // Update augment reference matrix_t
-  Matrix matrix_t = Matrix::Zero(matrix_b.rows() * horizon, 1);
+  // Update augment reference matrix_t - 构造 Yref 矩阵
+  Matrix matrix_t = Matrix::Zero(matrix_b.rows() * horizon, 1); // 维度 60x1
   for (size_t j = 0; j < horizon; ++j) {
     matrix_t.block(j * reference[0].size(), 0, reference[0].size(), 1) =
-        reference[j];
+        reference[j]; // matrix.block(i, j, p, q) - 子矩阵的行数和列数是 p，q；子矩阵第一个元素的位置是 i，j 
+        // 这里化简的写法就是 matrix_t.block(j * 6, 0, 6, 1)
+        // 表示：子矩阵始终是 6 行 1 列的矩阵，把 reference 中的第 j 个 matrix 赋给它。
   }
 
   // Update augment control matrix_v
@@ -59,29 +65,32 @@ bool SolveLinearMPC(const Matrix &matrix_a, const Matrix &matrix_b,
   for (size_t j = 0; j < horizon; ++j) {
     matrix_v.block(j * (*control)[0].rows(), 0, (*control)[0].rows(), 1) =
         (*control)[j];
+        // control 是一个指向 vector<Matrix> 的指针，这里首先进行了解引用，然后找第 j 个元素赋给 matrix_v 的某一个子矩阵。
+        // 这里化简的写法就是 matrix_v.block(j * 2, 0, 2, 1) 
+        // 表示：子矩阵是 2 行 1 列的矩阵；子矩阵第一个元素的位置是 (j*2, 0)
   }
-
-  std::vector<Matrix> matrix_a_power(horizon);
+  // 构造 AP 矩阵
+  std::vector<Matrix> matrix_a_power(horizon); // AP 矩阵是一个有 10 个元素的 vector
   matrix_a_power[0] = matrix_a;
   for (size_t i = 1; i < matrix_a_power.size(); ++i) {
-    matrix_a_power[i] = matrix_a * matrix_a_power[i - 1];
+    matrix_a_power[i] = matrix_a * matrix_a_power[i - 1]; // 第 i 个元素为 A 的 i 次方。
   }
-
+  // matrix_k 的维度为 60x20
   Matrix matrix_k =
-      Matrix::Zero(matrix_b.rows() * horizon, matrix_b.cols() * horizon);
-  matrix_k.block(0, 0, matrix_b.rows(), matrix_b.cols()) = matrix_b;
+      Matrix::Zero(matrix_b.rows() * horizon, matrix_b.cols() * horizon);  // matrix_b 的维度为 6x2
+  matrix_k.block(0, 0, matrix_b.rows(), matrix_b.cols()) = matrix_b; // 第一个子矩阵就是 matrix_b
   for (size_t r = 1; r < horizon; ++r) {
-    for (size_t c = 0; c < r; ++c) {
+    for (size_t c = 0; c < r; ++c) { // c < r, 是因为 matrix_k 是下三角矩阵。
       matrix_k.block(r * matrix_b.rows(), c * matrix_b.cols(), matrix_b.rows(),
                      matrix_b.cols()) = matrix_a_power[r - c - 1] * matrix_b;
     }
     matrix_k.block(r * matrix_b.rows(), r * matrix_b.cols(), matrix_b.rows(),
-                   matrix_b.cols()) = matrix_b;
+                   matrix_b.cols()) = matrix_b; // 对角线矩阵始终为 B 矩阵（即 B_tilde 矩阵）
   }
-  // Initialize matrix_k, matrix_m, matrix_t and matrix_v, matrix_qq, matrix_rr,
+  // Initialize matrix_m, matrix_t and matrix_v, matrix_qq, matrix_rr,
   // vector of matrix A power
-  Matrix matrix_m = Matrix::Zero(matrix_b.rows() * horizon, 1);
-  Matrix matrix_qq = Matrix::Zero(matrix_k.rows(), matrix_k.rows());
+  Matrix matrix_m = Matrix::Zero(matrix_b.rows() * horizon, 1); // 60x1
+  Matrix matrix_qq = Matrix::Zero(matrix_k.rows(), matrix_k.rows()); // 60x60
   Matrix matrix_rr = Matrix::Zero(matrix_k.cols(), matrix_k.cols());
   Matrix matrix_ll = Matrix::Zero(horizon * matrix_lower.rows(), 1);
   Matrix matrix_uu = Matrix::Zero(horizon * matrix_upper.rows(), 1);
