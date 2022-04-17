@@ -87,15 +87,14 @@ bool SolveLinearMPC(const Matrix &matrix_a, const Matrix &matrix_b,
     matrix_k.block(r * matrix_b.rows(), r * matrix_b.cols(), matrix_b.rows(),
                    matrix_b.cols()) = matrix_b; // 对角线矩阵始终为 B 矩阵（即 B_tilde 矩阵）
   }
-  // Initialize matrix_m, matrix_t and matrix_v, matrix_qq, matrix_rr,
-  // vector of matrix A power
+  // Initialize matrix_m, matrix_qq, matrix_rr
   Matrix matrix_m = Matrix::Zero(matrix_b.rows() * horizon, 1); // 60x1
   Matrix matrix_qq = Matrix::Zero(matrix_k.rows(), matrix_k.rows()); // 60x60
   Matrix matrix_rr = Matrix::Zero(matrix_k.cols(), matrix_k.cols());
   Matrix matrix_ll = Matrix::Zero(horizon * matrix_lower.rows(), 1);
   Matrix matrix_uu = Matrix::Zero(horizon * matrix_upper.rows(), 1);
   Matrix matrix_cc = Matrix::Zero(horizon * matrix_c.rows(), 1);
-  Matrix matrix_aa = Matrix::Zero(horizon * matrix_a.rows(), matrix_a.cols());
+  Matrix matrix_aa = Matrix::Zero(horizon * matrix_a.rows(), matrix_a.cols()); // 60x6
   matrix_aa.block(0, 0, matrix_a.rows(), matrix_a.cols()) = matrix_a;
 
   for (size_t i = 1; i < horizon; ++i) {
