@@ -29,13 +29,19 @@ using Matrix = Eigen::MatrixXd;
 
 // discrete linear predictive control solver, with control format
 // x(i + 1) = A * x(i) + B * u (i) + C
-bool SolveLinearMPC(const Matrix &matrix_a, const Matrix &matrix_b,
-                    const Matrix &matrix_c, const Matrix &matrix_q,
-                    const Matrix &matrix_r, const Matrix &matrix_lower,
+// 注：这里并没有构造新的状态空间方程，将 状态量和控制量写在一起。
+bool SolveLinearMPC(const Matrix &matrix_a,
+                    const Matrix &matrix_b,
+                    const Matrix &matrix_c, 
+                    const Matrix &matrix_q,
+                    const Matrix &matrix_r, 
+                    const Matrix &matrix_lower,
                     const Matrix &matrix_upper,
                     const Matrix &matrix_initial_state,
-                    const std::vector<Matrix> &reference, const double eps,
-                    const int max_iter, std::vector<Matrix> *control,
+                    const std::vector<Matrix> &reference,
+                    const double eps,
+                    const int max_iter, 
+                    std::vector<Matrix> *control,
                     std::vector<Matrix> *control_gain,
                     std::vector<Matrix> *addition_gain) {
   if (matrix_a.rows() != matrix_a.cols() ||
@@ -59,6 +65,9 @@ bool SolveLinearMPC(const Matrix &matrix_a, const Matrix &matrix_b,
   for (size_t j = 0; j < horizon; ++j) {
     matrix_v.block(j * (*control)[0].rows(), 0, (*control)[0].rows(), 1) =
         (*control)[j];
+        // control 是一个指向 vector<Matrix> 的指针，这里首先进行了解引用，然后找第 j 个元素赋给 matrix_v 的某一个子矩阵。
+        // 这里化简的写法就是 matrix_v.block(j*2, 0, 2, 1) 
+        // 表示：子矩阵是 2 行 1 列的矩阵；子矩阵第一个元素的位置是 (j*2, 0)
   }
 
   std::vector<Matrix> matrix_a_power(horizon);

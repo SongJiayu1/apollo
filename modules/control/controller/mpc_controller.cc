@@ -165,8 +165,8 @@ Status MPCController::Init(const ControlConf *control_conf) {
                   "failed to load control_conf");
   }
   // Matrix init operations.
-  matrix_a_ = Matrix::Zero(basic_state_size_, basic_state_size_);
-  matrix_ad_ = Matrix::Zero(basic_state_size_, basic_state_size_);
+  matrix_a_ = Matrix::Zero(basic_state_size_, basic_state_size_); // 初始化 A 矩阵
+  matrix_ad_ = Matrix::Zero(basic_state_size_, basic_state_size_); // 初始化离散 A 矩阵
   matrix_a_(0, 1) = 1.0;
   matrix_a_(1, 2) = (cf_ + cr_) / mass_;
   matrix_a_(2, 3) = 1.0;
