@@ -104,7 +104,7 @@ PathPoint TrajectoryAnalyzer::QueryMatchedPathPoint(const double x,
 // perpendicular.
 void TrajectoryAnalyzer::ToTrajectoryFrame(const double x, const double y,
                                            const double theta, const double v,
-                                           const PathPoint &ref_point,
+                                           const PathPoint &ref_point, // matched_point
                                            double *ptr_s, double *ptr_s_dot,
                                            double *ptr_d,
                                            double *ptr_d_dot) const {
@@ -116,19 +116,19 @@ void TrajectoryAnalyzer::ToTrajectoryFrame(const double x, const double y,
 
   // the sin of diff angle between vector (cos_ref_theta, sin_ref_theta) and
   // (dx, dy)
-  double cross_rd_nd = cos_ref_theta * dy - sin_ref_theta * dx;
+  double cross_rd_nd = cos_ref_theta * dy - sin_ref_theta * dx; // 车辆当前位置到 matched_point 的横向偏差
   *ptr_d = cross_rd_nd;
 
   // the cos of diff angle between vector (cos_ref_theta, sin_ref_theta) and
   // (dx, dy)
-  double dot_rd_nd = dx * cos_ref_theta + dy * sin_ref_theta;
-  *ptr_s = ref_point.s() + dot_rd_nd;
+  double dot_rd_nd = dx * cos_ref_theta + dy * sin_ref_theta; // 车辆当前位置到 matched_point 的纵向偏差
+  *ptr_s = ref_point.s() + dot_rd_nd; // 求得车辆当前位置映射到 参考线下的 s 值
 
-  double delta_theta = theta - ref_point.theta();
+  double delta_theta = theta - ref_point.theta(); // 车辆当前航向角 theta 和 matched_point 处的航向角的差值
   double cos_delta_theta = std::cos(delta_theta);
   double sin_delta_theta = std::sin(delta_theta);
 
-  *ptr_d_dot = v * sin_delta_theta;
+  *ptr_d_dot = v * sin_delta_theta; // 横向速度
 
   double one_minus_kappa_r_d = 1 - ref_point.kappa() * (*ptr_d);
   if (one_minus_kappa_r_d <= 0.0) {
@@ -144,7 +144,7 @@ void TrajectoryAnalyzer::ToTrajectoryFrame(const double x, const double y,
     one_minus_kappa_r_d = 0.01;
   }
 
-  *ptr_s_dot = v * cos_delta_theta / one_minus_kappa_r_d;
+  *ptr_s_dot = v * cos_delta_theta / one_minus_kappa_r_d; // 纵向车速
 }
 
 TrajectoryPoint TrajectoryAnalyzer::QueryNearestPointByAbsoluteTime(

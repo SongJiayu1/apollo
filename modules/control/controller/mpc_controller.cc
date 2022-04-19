@@ -309,12 +309,12 @@ Status MPCController::ComputeControlCommand(
   SimpleMPCDebug *debug = cmd->mutable_debug()->mutable_simple_mpc_debug();
   debug->Clear();
 
-  ComputeLongitudinalErrors(&trajectory_analyzer_, debug);
+  ComputeLongitudinalErrors(&trajectory_analyzer_, debug); // 计算纵向误差，并保存在 debug 信息中。
 
   // Update state
-  UpdateState(debug);
+  UpdateState(debug); // 横向误差在 UpdateState 函数中计算
 
-  UpdateMatrix(debug);
+  UpdateMatrix(debug); // 更新 A 矩阵和 C 矩阵（B 矩阵不随着车辆的运动而发生变化，不用更新）
 
   FeedforwardUpdate(debug);
 
@@ -564,13 +564,15 @@ void MPCController::LoadControlCalibrationTable(
 }
 
 void MPCController::UpdateState(SimpleMPCDebug *debug) {
-  const auto &com = VehicleStateProvider::Instance()->ComputeCOMPosition(lr_);
-  ComputeLateralErrors(com.x(), com.y(),
-                       VehicleStateProvider::Instance()->heading(),
-                       VehicleStateProvider::Instance()->linear_velocity(),
+  const auto &com = VehicleStateProvider::Instance()->ComputeCOMPosition(lr_); // center of mass
+  // 计算横向误差
+  ComputeLateralErrors(com.x(), com.y(), // 当前车辆位置坐标 (x, y)
+                       VehicleStateProvider::Instance()->heading(), // 当前航向角
+                       VehicleStateProvider::Instance()->linear_velocity(), 
                        VehicleStateProvider::Instance()->angular_velocity(),
                        VehicleStateProvider::Instance()->linear_acceleration(),
-                       trajectory_analyzer_, debug);
+                       trajectory_analyzer_, // 规划模块输出的轨迹
+                       debug); // 输出：debug 信息，主要用来更新状态矩阵
 
   // State matrix update;
   matrix_state_(0, 0) = debug->lateral_error();
@@ -610,6 +612,7 @@ void MPCController::ComputeLateralErrors(
     const double x, const double y, const double theta, const double linear_v,
     const double angular_v, const double linear_a,
     const TrajectoryAnalyzer &trajectory_analyzer, SimpleMPCDebug *debug) {
+  // 根据距离查找最近的 matched_point
   const auto matched_point =
       trajectory_analyzer.QueryNearestPointByPosition(x, y);
 
@@ -619,17 +622,18 @@ void MPCController::ComputeLateralErrors(
   const double cos_matched_theta = std::cos(matched_point.path_point().theta());
   const double sin_matched_theta = std::sin(matched_point.path_point().theta());
   // d_error = cos_matched_theta * dy - sin_matched_theta * dx;
-  debug->set_lateral_error(cos_matched_theta * dy - sin_matched_theta * dx);
+  debug->set_lateral_error(cos_matched_theta * dy - sin_matched_theta * dx); // 横向偏差
 
   // matched_theta = matched_point.path_point().theta();
   debug->set_ref_heading(matched_point.path_point().theta());
   const double delta_theta =
       common::math::NormalizeAngle(theta - debug->ref_heading());
-  debug->set_heading_error(delta_theta);
+  debug->set_heading_error(delta_theta); 
+  // delta_theta 是 车辆当前航向角 theta 与 matched_point 处的航向角的差值
 
   const double sin_delta_theta = std::sin(delta_theta);
   // d_error_dot = chassis_v * sin_delta_theta;
-  double lateral_error_dot = linear_v * sin_delta_theta;
+  double lateral_error_dot = linear_v * sin_delta_theta; // 横向偏差变化率：线车速与 delta_theta 的正弦相乘
   double lateral_error_dot_dot = linear_a * sin_delta_theta;
   if (FLAGS_reverse_heading_control) {
     if (VehicleStateProvider::Instance()->gear() ==
@@ -688,23 +692,28 @@ void MPCController::ComputeLongitudinalErrors(
   double d_matched = 0.0;
   double d_dot_matched = 0.0;
 
+  // 按照距离最小，查找当前车辆位置在参考线上的匹配点（笛卡尔坐标）
   const auto matched_point = trajectory_analyzer->QueryMatchedPathPoint(
       VehicleStateProvider::Instance()->x(),
       VehicleStateProvider::Instance()->y());
 
+  // 将车辆当前坐标转换到 Frenet Frame，得到 s_matched 和 d_matched
   trajectory_analyzer->ToTrajectoryFrame(
       VehicleStateProvider::Instance()->x(),
       VehicleStateProvider::Instance()->y(),
       VehicleStateProvider::Instance()->heading(),
       VehicleStateProvider::Instance()->linear_velocity(), matched_point,
       &s_matched, &s_dot_matched, &d_matched, &d_dot_matched);
+      // 这里传进去的是地址，这样对这个地址的操作，就可以作为输出使用
 
   const double current_control_time = Clock::NowInSeconds();
 
+  // 找到时间上与当前 control time 最接近的 reference point，即规划的下一个时刻的点的位置（Frenet 坐标系下）
   TrajectoryPoint reference_point =
       trajectory_analyzer->QueryNearestPointByAbsoluteTime(
-          current_control_time);
+          current_control_time); // 根据时间找参考线上的 reference_point 
 
+  // 注意：matched point 和 reference point 是两个不同的点，实际上就是在找这两个点之间的误差。
   ADEBUG << "matched point:" << matched_point.DebugString();
   ADEBUG << "reference point:" << reference_point.DebugString();
 
@@ -713,17 +722,19 @@ void MPCController::ComputeLongitudinalErrors(
       VehicleStateProvider::Instance()->linear_acceleration();
   double heading_error = common::math::NormalizeAngle(
       VehicleStateProvider::Instance()->heading() - matched_point.theta());
-  double lon_speed = linear_v * std::cos(heading_error);
-  double lon_acceleration = linear_a * std::cos(heading_error);
+  double lon_speed = linear_v * std::cos(heading_error); // 根据 heading error，计算车辆当前车速在 matched_point 处 s 方向的速度
+  double lon_acceleration = linear_a * std::cos(heading_error); // 根据 heading_error 计算 matched_point 在 s 方向的加速度
   double one_minus_kappa_lat_error = 1 - reference_point.path_point().kappa() *
                                              linear_v * std::sin(heading_error);
+  
 
-  debug->set_station_reference(reference_point.path_point().s());
+  // 计算纵向的位置和速度偏差（就是 s 方向的位置和速度偏差），并赋值给 debug 中对应的成员变量。
+  debug->set_station_reference(reference_point.path_point().s()); // 
   debug->set_station_feedback(s_matched);
-  debug->set_station_error(reference_point.path_point().s() - s_matched);
+  debug->set_station_error(reference_point.path_point().s() - s_matched); // 计算纵向位置误差 - 实际上是 s 方向的位置误差
   debug->set_speed_reference(reference_point.v());
   debug->set_speed_feedback(lon_speed);
-  debug->set_speed_error(reference_point.v() - s_dot_matched);
+  debug->set_speed_error(reference_point.v() - s_dot_matched); // 计算纵向速度误差 - 沿着参考线 s 方向的速度误差
   debug->set_acceleration_reference(reference_point.a());
   debug->set_acceleration_feedback(lon_acceleration);
   debug->set_acceleration_error(reference_point.a() -
