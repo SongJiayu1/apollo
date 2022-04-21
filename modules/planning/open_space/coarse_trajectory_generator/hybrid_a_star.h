@@ -92,9 +92,9 @@ class HybridAStar {
   PlannerOpenSpaceConfig planner_open_space_config_;
   common::VehicleParam vehicle_param_ =
       common::VehicleConfigHelper::GetConfig().vehicle_param();
-  size_t next_node_num_ = 0;
+  size_t next_node_num_ = 0; // 
   double max_steer_angle_ = 0.0;
-  double step_size_ = 0.0;
+  double step_size_ = 0.0; // 车辆前进距离
   double xy_grid_resolution_ = 0.0;
   double delta_t_ = 0.0;
   double traj_forward_penalty_ = 0.0;
@@ -117,7 +117,7 @@ class HybridAStar {
   struct cmp {
     bool operator()(const std::pair<std::string, double>& left,
                     const std::pair<std::string, double>& right) const {
-      return left.second >= right.second;
+      return left.second >= right.second; 
     }
   };
   std::priority_queue<std::pair<std::string, double>,

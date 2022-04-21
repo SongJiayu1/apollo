@@ -88,8 +88,8 @@ class Node3d {
   double traj_cost_ = 0.0;
   double heuristic_cost_ = 0.0;
   double cost_ = 0.0;
-  std::shared_ptr<Node3d> pre_node_ = nullptr;
-  double steering_ = 0.0;
+  std::shared_ptr<Node3d> pre_node_ = nullptr; // 指向父节点的指针
+  double steering_ = 0.0; // 前轮转角
   // true for moving forward and false for moving backward
   bool direction_ = true;
 };

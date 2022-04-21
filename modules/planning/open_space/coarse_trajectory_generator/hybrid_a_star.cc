@@ -36,12 +36,12 @@ HybridAStar::HybridAStar(const PlannerOpenSpaceConfig& open_space_conf) {
   grid_a_star_heuristic_generator_ =
       std::make_unique<GridSearch>(planner_open_space_config_);
   next_node_num_ =
-      planner_open_space_config_.warm_start_config().next_node_num();
+      planner_open_space_config_.warm_start_config().next_node_num(); // next_node_num = 10
   max_steer_angle_ =
-      vehicle_param_.max_steer_angle() / vehicle_param_.steer_ratio();
-  step_size_ = planner_open_space_config_.warm_start_config().step_size();
+      vehicle_param_.max_steer_angle() / vehicle_param_.steer_ratio(); // max_steer_angle: 8.20 弧度，约等于 30° 角度
+  step_size_ = planner_open_space_config_.warm_start_config().step_size(); // step_size_ = 0.5
   xy_grid_resolution_ =
-      planner_open_space_config_.warm_start_config().xy_grid_resolution();
+      planner_open_space_config_.warm_start_config().xy_grid_resolution(); // xy_grid_resolution_ = 0.3
   delta_t_ = planner_open_space_config_.delta_t();
   traj_forward_penalty_ =
       planner_open_space_config_.warm_start_config().traj_forward_penalty();
@@ -63,7 +63,7 @@ bool HybridAStar::AnalyticExpansion(std::shared_ptr<Node3d> current_node) {
     ADEBUG << "ShortestRSP failed";
     return false;
   }
-
+  // RS 曲线的碰撞与越界检测
   if (!RSPCheck(reeds_shepp_to_check)) {
     return false;
   }
@@ -142,11 +142,13 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
     std::shared_ptr<Node3d> current_node, size_t next_node_index) {
   double steering = 0.0;
   double traveled_distance = 0.0;
+
+  // 1. 计算 steering 和 traveled_distance
   if (next_node_index < static_cast<double>(next_node_num_) / 2) {
     steering =
         -max_steer_angle_ +
         (2 * max_steer_angle_ / (static_cast<double>(next_node_num_) / 2 - 1)) *
-            static_cast<double>(next_node_index);
+            static_cast<double>(next_node_index); // 
     traveled_distance = step_size_;
   } else {
     size_t index = next_node_index - next_node_num_ / 2;
@@ -171,6 +173,7 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
   for (size_t i = 0; i < arc / step_size_; ++i) {
     const double next_x = last_x + traveled_distance * std::cos(last_phi);
     const double next_y = last_y + traveled_distance * std::sin(last_phi);
+    // 这里使用了以后轴为参考点的自行车模型
     const double next_phi = common::math::NormalizeAngle(
         last_phi +
         traveled_distance / vehicle_param_.wheel_base() * std::tan(steering));
@@ -631,34 +634,36 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
   *result = stitched_result;
   return true;
 }
-
+// HybridAStar 的核心规划函数
 bool HybridAStar::Plan(
     double sx, double sy, double sphi, double ex, double ey, double ephi,
     const std::vector<double>& XYbounds,
-    const std::vector<std::vector<common::math::Vec2d>>& obstacles_vertices_vec,
+    const std::vector<std::vector<common::math::Vec2d>>& obstacles_vertices_vec, 
     HybridAStartResult* result) {
-  // clear containers
+  // 1 数据准备，清空之前的缓存数据 - 1.1 clear containers 
   open_set_.clear();
   close_set_.clear();
-  open_pq_ = decltype(open_pq_)();
+  open_pq_ = decltype(open_pq_)(); // 注意这里的用法，用 decltype 清空一种容器
   final_node_ = nullptr;
-
+  // 1.2 初始化存放障碍物边界的 vector
   std::vector<std::vector<common::math::LineSegment2d>>
       obstacles_linesegments_vec;
+  // 根据障碍物顶点信息，构造障碍物的轮廓线段
   for (const auto& obstacle_vertices : obstacles_vertices_vec) {
     size_t vertices_num = obstacle_vertices.size();
-    std::vector<common::math::LineSegment2d> obstacle_linesegments;
-    for (size_t i = 0; i < vertices_num - 1; ++i) {
+    std::vector<common::math::LineSegment2d> obstacle_linesegments; // 存放每个障碍物的边界线段信息，一个障碍物有多条边界线段
+    for (size_t i = 0; i < vertices_num - 1; ++i) { // 假设一个障碍物有 4 个顶点，则构造的线段为 0-1，1-2，2-3
       common::math::LineSegment2d line_segment = common::math::LineSegment2d(
-          obstacle_vertices[i], obstacle_vertices[i + 1]);
+          obstacle_vertices[i], obstacle_vertices[i + 1]); // 构造每条线段
       obstacle_linesegments.emplace_back(line_segment);
     }
     obstacles_linesegments_vec.emplace_back(obstacle_linesegments);
   }
-  obstacles_linesegments_vec_ = std::move(obstacles_linesegments_vec);
+  obstacles_linesegments_vec_ = std::move(obstacles_linesegments_vec); // 构造结束后，存入类的成员变量
 
   // load XYbounds
   XYbounds_ = XYbounds;
+  // 1.3 构造起始节点和目标节点 - 注意：这里使用智能指针的 reset 函数
   // load nodes and obstacles
   start_node_.reset(
       new Node3d({sx}, {sy}, {sphi}, XYbounds_, planner_open_space_config_));
@@ -673,33 +678,47 @@ bool HybridAStar::Plan(
     return false;
   }
   double map_time = Clock::NowInSeconds();
+  // 1.5 生成 dp_map_
+  // 使用动态规划 DP 来计算目标点到某点的启发代价（以目标点为 DP 的起点），即 heuristic cost 中的 holonomic with obstacle 部分。
+  // 生成 graph 的同时获得了目标点到图中任一点的 cost，作为缓存，这就是 DPMap 的用处
   grid_a_star_heuristic_generator_->GenerateDpMap(ex, ey, XYbounds_,
                                                   obstacles_linesegments_vec_);
   ADEBUG << "map time " << Clock::NowInSeconds() - map_time;
-  // load open set, pq
+  // 1.6 将 start_node_ 压入 open_set_ 和 priority queue - load open set, pq
+  // 注：这里用 open_set_ 和 open_pq 共同实现了 open list 的作用；
+  //  open_set_ 用来存放 index 和 node 的指针 - 由于是哈希表结构，可以快速查找；
+  //  open_pq_ 用来对 node 按照 cost 进行排序，可以快速排序
+  // 这种设计方式，实际上是用空间换时间的思想
   open_set_.emplace(start_node_->GetIndex(), start_node_);
   open_pq_.emplace(start_node_->GetIndex(), start_node_->GetCost());
+  // 注：这里 open_pq_ 里面的每个元素都是 std::pair<std::string, double>
 
-  // Hybrid A* begins
   size_t explored_node_num = 0;
   double astar_start_time = Clock::NowInSeconds();
   double heuristic_time = 0.0;
   double rs_time = 0.0;
+
+  // 2 HybridAStar 主循环
   while (!open_pq_.empty()) {
-    // take out the lowest cost neighboring node
-    const std::string current_id = open_pq_.top().first;
+    // 2.1 take out the lowest cost neighboring node
+    const std::string current_id = open_pq_.top().first; 
+    // 这里处理的思路：用优先队列查找 cost 最小的节点的 id，然后去 open_set_ 里面找对应的节点的指针
     open_pq_.pop();
     std::shared_ptr<Node3d> current_node = open_set_[current_id];
-    // check if an analystic curve could be connected from current
+    // 2.2 check if an analystic curve could be connected from current
     // configuration to the end configuration without collision. if so, search
-    // ends.
+    // ends. - 尝试直接用 RS 曲线连接当前节点到目标节点，如果无碰撞，返回 RS 曲线，结束循环
     const double rs_start_time = Clock::NowInSeconds();
     if (AnalyticExpansion(current_node)) {
-      break;
+      break; // 主循环结束的条件
     }
     const double rs_end_time = Clock::NowInSeconds();
     rs_time += rs_end_time - rs_start_time;
+
+    // 2.3 将当前节点加入 close_set_
     close_set_.emplace(current_node->GetIndex(), current_node);
+    // 2.4 由当前节点扩展下一个节点
+    // 对前轮转角进行采样，向前 5 个点，向后 5 个点
     for (size_t i = 0; i < next_node_num_; ++i) {
       std::shared_ptr<Node3d> next_node = Next_node_generator(current_node, i);
       // boundary check failure handle
@@ -714,6 +733,7 @@ bool HybridAStar::Plan(
       if (!ValidityCheck(next_node)) {
         continue;
       }
+      // 如果 next_node_ 不在 open_set_ 中，则计算它的 cost，并将其添加到 open_set_ 中
       if (open_set_.find(next_node->GetIndex()) == open_set_.end()) {
         explored_node_num++;
         const double start_time = Clock::NowInSeconds();
@@ -724,12 +744,13 @@ bool HybridAStar::Plan(
         open_pq_.emplace(next_node->GetIndex(), next_node->GetCost());
       }
     }
-  }
+  } // HybridAStar 的主循环会一直循环，直到 AnalyticExpansion 函数击中到目标点，此时 final_node_ 指针会被赋值。
   if (final_node_ == nullptr) {
     ADEBUG << "Hybrid A searching return null ptr(open_set ran out)";
     return false;
   }
-  if (!GetResult(result)) {
+  // 
+  if (!GetResult(result)) { // 这里的 result 是 HybridAStar::Plan 函数的输出，是一个类型为 HybridAStartResult 的指针
     ADEBUG << "GetResult failed";
     return false;
   }
