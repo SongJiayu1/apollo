@@ -232,6 +232,14 @@ PiecewiseJerkPathOptimizer::ConvertPathPointRefFromFrontAxeToRearAxe(
   return ret;
 }
 
+/*
+  PiecewiseJerkPathOptimizer::OptimizePath
+  使用 QP 进行路径平滑
+    1. 实例化 PiecewiseJerkPathProblem -> piecewise_jerk_problem
+    2. set 权重矩阵，缩放因子，边界条件矩阵
+    3. 调用 piecewise_jerk_problem.Optimize(max_iter) 进行优化求解
+  输出：一串离散点 (s, l, l', l'')，个数为 kNumKnots
+*/
 bool PiecewiseJerkPathOptimizer::OptimizePath(
     const std::array<double, 3>& init_state,
     const std::array<double, 3>& end_state,
@@ -239,15 +247,19 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
     const double delta_s, const bool is_valid_path_reference,
     const std::vector<std::pair<double, double>>& lat_boundaries,
     const std::vector<std::pair<double, double>>& ddl_bounds,
-    const std::array<double, 5>& w, const int max_iter, std::vector<double>* x,
-    std::vector<double>* dx, std::vector<double>* ddx) {
+    const std::array<double, 5>& w, 
+    const int max_iter,
+    std::vector<double>* x, // 输出： x, dx, ddx
+    std::vector<double>* dx, 
+    std::vector<double>* ddx) {
   // num of knots
   const size_t kNumKnots = lat_boundaries.size();
+  // 实例化 PieceweiseJerkPathProblem
   PiecewiseJerkPathProblem piecewise_jerk_problem(kNumKnots, delta_s,
                                                   init_state);
 
   // TODO(Hongyi): update end_state settings
-  piecewise_jerk_problem.set_end_state_ref({1000.0, 0.0, 0.0}, end_state);
+  piecewise_jerk_problem.set_end_state_ref({1000.0, 0.0, 0.0}, end_state); // weight_end_state, end_state_ref
   // pull over scenarios
   // Because path reference might also make the end_state != 0
   // we have to exclude this condition here
@@ -301,12 +313,12 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
   const auto& veh_param =
       common::VehicleConfigHelper::GetConfig().vehicle_param();
   const double axis_distance = veh_param.wheel_base();
-  const double max_yaw_rate =
-      veh_param.max_steer_angle_rate() / veh_param.steer_ratio() / 2.0;
-  const double jerk_bound = EstimateJerkBoundary(std::fmax(init_state[1], 1.0),
+  const double max_yaw_rate = // 前轮转角的最大角速度
+      veh_param.max_steer_angle_rate() / veh_param.steer_ratio() / 2.0; // 由方向盘转动的最大角速度，计算得到前轮转角的最大角速度
+  const double jerk_bound = EstimateJerkBoundary(std::fmax(init_state[1], 1.0), // 速度小于 1 的时候取 1
                                                  axis_distance, max_yaw_rate);
   piecewise_jerk_problem.set_dddx_bound(jerk_bound);
-
+  // 调用 OSQP 进行优化
   bool success = piecewise_jerk_problem.Optimize(max_iter);
 
   auto end_time = std::chrono::system_clock::now();
@@ -317,7 +329,7 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
     AERROR << "piecewise jerk path optimizer failed";
     return false;
   }
-
+  // 将优化后的 x, x', x'' 信息输出
   *x = piecewise_jerk_problem.opt_x();
   *dx = piecewise_jerk_problem.opt_dx();
   *ddx = piecewise_jerk_problem.opt_ddx();
@@ -365,6 +377,7 @@ double PiecewiseJerkPathOptimizer::EstimateJerkBoundary(
     const double vehicle_speed, const double axis_distance,
     const double max_yaw_rate) const {
   return max_yaw_rate / axis_distance / vehicle_speed;
+  // 这里的 max_yaw_rate 是前轮转角的角速度
 }
 
 double PiecewiseJerkPathOptimizer::GaussianWeighting(

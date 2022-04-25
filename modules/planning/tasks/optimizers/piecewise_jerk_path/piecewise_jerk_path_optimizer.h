@@ -80,7 +80,8 @@ class PiecewiseJerkPathOptimizer : public PathOptimizer {
       const std::array<double, 5>& w, const int max_iter,
       std::vector<double>* ptr_x, std::vector<double>* ptr_dx,
       std::vector<double>* ptr_ddx);
-
+      
+  // 依据 jerk 恒定曲线，插值得到离散路标点
   FrenetFramePath ToPiecewiseJerkPath(const std::vector<double>& l,
                                       const std::vector<double>& dl,
                                       const std::vector<double>& ddl,

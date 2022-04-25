@@ -48,14 +48,19 @@ PiecewiseJerkProblem::PiecewiseJerkProblem(
   weight_x_ref_vec_ = std::vector<double>(num_of_knots_, 0.0);
 }
 
+/*
+  二次规划问题，形如：
+        1/2 x^T P x + q x
+        s.t. lower_bounds <= Ax <= upper_bounds
+*/
 OSQPData* PiecewiseJerkProblem::FormulateProblem() {
-  // calculate kernel
+  // calculate kernel - 1. 构造二次项的权重矩阵，即 P 矩阵
   std::vector<c_float> P_data;
   std::vector<c_int> P_indices;
   std::vector<c_int> P_indptr;
   CalculateKernel(&P_data, &P_indices, &P_indptr);
 
-  // calculate affine constraints
+  // calculate affine constraints - 2 构造约束的仿射矩阵 A 以及上下边界
   std::vector<c_float> A_data;
   std::vector<c_int> A_indices;
   std::vector<c_int> A_indptr;
@@ -64,10 +69,10 @@ OSQPData* PiecewiseJerkProblem::FormulateProblem() {
   CalculateAffineConstraint(&A_data, &A_indices, &A_indptr, &lower_bounds,
                             &upper_bounds);
 
-  // calculate offset
+  // calculate offset - 3 构造线性项的权重矩阵，即 q 矩阵
   std::vector<c_float> q;
   CalculateOffset(&q);
-
+  // 初始化一个 OSQPData，然后将构造的矩阵都赋给它
   OSQPData* data = reinterpret_cast<OSQPData*>(c_malloc(sizeof(OSQPData)));
   CHECK_EQ(lower_bounds.size(), upper_bounds.size());
 
@@ -92,7 +97,7 @@ bool PiecewiseJerkProblem::Optimize(const int max_iter) {
 
   OSQPSettings* settings = SolverDefaultSettings();
   settings->max_iter = max_iter;
-
+  // 实例化一个 OSQP 任务
   OSQPWorkspace* osqp_work = nullptr;
   osqp_work = osqp_setup(data, settings);
   // osqp_setup(&osqp_work, data, settings);
@@ -132,40 +137,43 @@ bool PiecewiseJerkProblem::Optimize(const int max_iter) {
   c_free(settings);
   return true;
 }
-
+// 计算约束条件的 A 矩阵
 void PiecewiseJerkProblem::CalculateAffineConstraint(
     std::vector<c_float>* A_data, std::vector<c_int>* A_indices,
     std::vector<c_int>* A_indptr, std::vector<c_float>* lower_bounds,
     std::vector<c_float>* upper_bounds) {
-  // 3N params bounds on x, x', x''
-  // 3(N-1) constraints on x, x', x''
-  // 3 constraints on x_init_
-  const int n = static_cast<int>(num_of_knots_);
-  const int num_of_variables = 3 * n;
-  const int num_of_constraints = num_of_variables + 3 * (n - 1) + 3;
+  // 3N params bounds on x, x', x'' - 上下界约束，包括 x, x', x'' 的上下界，共 3n 行
+  // 3(N-1) constraints on x, x', x'' - 连续性约束，包括 x''' 的上下界，x -> x' 的连续性约束，
+  // 和 x' -> x'' 的连续性约束，共 3(n-1) 行
+  // 3 constraints on x_init_ - 初始状态约束，共 3 行
+  const int n = static_cast<int>(num_of_knots_); // 假设 n = 4，表示有 4 个点需要平滑
+  const int num_of_variables = 3 * n; // 则 number_of_variables = 12
+  const int num_of_constraints = num_of_variables + 3 * (n - 1) + 3; // num_of_constraints = 24
   lower_bounds->resize(num_of_constraints);
   upper_bounds->resize(num_of_constraints);
-
+  
+  // 初始化 A 矩阵 - 用一个二维 vector 来构造 A 矩阵
   std::vector<std::vector<std::pair<c_int, c_float>>> variables(
-      num_of_variables);
+      num_of_variables); // 按照上面的假设（4 个点需要优化），
+      // 则 variables 有 12 个元素，每个元素是一个 vector<pair<int, float>>，表示一行
 
   int constraint_index = 0;
-  // set x, x', x'' bounds
-  for (int i = 0; i < num_of_variables; ++i) {
-    if (i < n) {
+  // set x, x', x'' bounds - 对 A 矩阵的前 12 行进行赋值
+  for (int i = 0; i < num_of_variables; ++i) { // 每一行进行循环，number_of_variales = 12
+    if (i < n) { // i = 0, 1, 2, 3 - 对 A 矩阵的 0 - 3 行进行赋值，构造 x 约束
       variables[i].emplace_back(constraint_index, 1.0);
       lower_bounds->at(constraint_index) =
           x_bounds_[i].first * scale_factor_[0];
       upper_bounds->at(constraint_index) =
           x_bounds_[i].second * scale_factor_[0];
-    } else if (i < 2 * n) {
+    } else if (i < 2 * n) { // i = 4, 5, 6, 7 - 对 A 矩阵的 4 - 7 行赋值，构造 x' 约束
       variables[i].emplace_back(constraint_index, 1.0);
 
       lower_bounds->at(constraint_index) =
           dx_bounds_[i - n].first * scale_factor_[1];
       upper_bounds->at(constraint_index) =
           dx_bounds_[i - n].second * scale_factor_[1];
-    } else {
+    } else { // i = 8, 9, 10, 11 - 对 A 矩阵的 8 - 11 行赋值，构造 x'' 的约束
       variables[i].emplace_back(constraint_index, 1.0);
       lower_bounds->at(constraint_index) =
           ddx_bounds_[i - 2 * n].first * scale_factor_[2];
@@ -176,7 +184,7 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
   }
   CHECK_EQ(constraint_index, num_of_variables);
 
-  // x(i->i+1)''' = (x(i+1)'' - x(i)'') / delta_s
+  // x(i->i+1)''' = (x(i+1)'' - x(i)'') / delta_s - 构造 x''' 的约束
   for (int i = 0; i + 1 < n; ++i) {
     variables[2 * n + i].emplace_back(constraint_index, -1.0);
     variables[2 * n + i + 1].emplace_back(constraint_index, 1.0);
@@ -186,7 +194,7 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
         dddx_bound_.second * delta_s_ * scale_factor_[2];
     ++constraint_index;
   }
-
+  // x'' -> x' 一阶导的连续性约束
   // x(i+1)' - x(i)' - 0.5 * delta_s * x(i)'' - 0.5 * delta_s * x(i+1)'' = 0
   for (int i = 0; i + 1 < n; ++i) {
     variables[n + i].emplace_back(constraint_index, -1.0 * scale_factor_[2]);
@@ -199,7 +207,7 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
     upper_bounds->at(constraint_index) = 0.0;
     ++constraint_index;
   }
-
+  // x' -> x 零阶导的连续性约束
   // x(i+1) - x(i) - delta_s * x(i)'
   // - 1/3 * delta_s^2 * x(i)'' - 1/6 * delta_s^2 * x(i+1)''
   auto delta_s_sq_ = delta_s_ * delta_s_;
@@ -222,7 +230,7 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
     ++constraint_index;
   }
 
-  // constrain on x_init
+  // constrain on x_init - 初始状态约束
   variables[0].emplace_back(constraint_index, 1.0);
   lower_bounds->at(constraint_index) = x_init_[0] * scale_factor_[0];
   upper_bounds->at(constraint_index) = x_init_[0] * scale_factor_[0];

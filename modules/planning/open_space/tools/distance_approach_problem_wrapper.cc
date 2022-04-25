@@ -436,6 +436,7 @@ bool DistancePlan(HybridAStar* hybridA_ptr, ObstacleContainer* obstacles_ptr,
   std::vector<double> XYbounds_(XYbounds, XYbounds + 4);
 
   const auto start_timestamp = std::chrono::system_clock::now();
+  // 先调用Hybrid A* 产生初步的轨迹作为 warm start，输出：hybrid_astar_result；注：这里传入的是一个地址
   if (!hybridA_ptr->Plan(sx, sy, sphi, ex, ey, ephi, XYbounds_,
                          obstacles_ptr->GetObstacleVec(),
                          &hybrid_astar_result)) {
@@ -512,7 +513,7 @@ bool DistancePlan(HybridAStar* hybridA_ptr, ObstacleContainer* obstacles_ptr,
         AINFO << "trajectory idx: " << i;
         AINFO << "trajectory pt number: " << partition_trajectories[i].x.size();
       }
-
+      // 然后调用 DistanceSmoothing() 做平滑
       if (!DistanceSmoothing(planner_open_space_config_, *obstacles_ptr,
                              piece_wise_sx, piece_wise_sy, piece_wise_sphi,
                              piece_wise_ex, piece_wise_ey, piece_wise_ephi,

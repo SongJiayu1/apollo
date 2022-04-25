@@ -107,7 +107,7 @@ class PiecewiseJerkProblem {
 
   void set_end_state_ref(const std::array<double, 3>& weight_end_state,
                          const std::array<double, 3>& end_state_ref);
-
+  // 调用 OSQP 求解器进行求解
   virtual bool Optimize(const int max_iter = 4000);
 
   const std::vector<double>& opt_x() const { return x_; }
@@ -118,12 +118,13 @@ class PiecewiseJerkProblem {
 
  protected:
   // naming convention follows osqp solver.
+  // 构建 P 矩阵 - 纯虚函数，在子类 PiecewiseJerkPathProblem 或者 PiecewiseJerkSpeedProblem 中有具体的实现
   virtual void CalculateKernel(std::vector<c_float>* P_data,
                                std::vector<c_int>* P_indices,
                                std::vector<c_int>* P_indptr) = 0;
-
-  virtual void CalculateOffset(std::vector<c_float>* q) = 0;
-
+  // 构建 q 矩阵 - 纯虚函数
+  virtual void CalculateOffset(std::vector<c_float>* q) = 0; 
+  // 构建 A 矩阵 - 约束的 仿射矩阵，对于 path 和 speed，用的是同一个仿射矩阵
   virtual void CalculateAffineConstraint(std::vector<c_float>* A_data,
                                          std::vector<c_int>* A_indices,
                                          std::vector<c_int>* A_indptr,
