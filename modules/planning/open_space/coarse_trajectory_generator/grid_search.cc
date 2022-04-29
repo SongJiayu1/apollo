@@ -172,7 +172,8 @@ bool GridSearch::GenerateAStarPath(
 bool GridSearch::GenerateDpMap(
     const double ex, const double ey, const std::vector<double>& XYbounds,
     const std::vector<std::vector<common::math::LineSegment2d>>&
-        obstacles_linesegments_vec) {
+        obstacles_linesegments_vec) 
+{
   std::priority_queue<std::pair<std::string, double>,
                       std::vector<std::pair<std::string, double>>, cmp>
       open_pq;

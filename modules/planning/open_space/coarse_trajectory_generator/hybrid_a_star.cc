@@ -217,10 +217,12 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
 void HybridAStar::CalculateNodeCost(std::shared_ptr<Node3d> current_node,
                                     std::shared_ptr<Node3d> next_node) {
   next_node->SetTrajCost(current_node->GetTrajCost() +
-                         TrajCost(current_node, next_node));
+                         TrajCost(current_node, next_node)); 
+  // TrajCost 函数计算了从当前节点到下一个节点状态转换的 cost
   // evaluate heuristic cost
   double optimal_path_cost = 0.0;
   optimal_path_cost += HoloObstacleHeuristic(next_node);
+  // 这里只用了 dp_map 作为启发 cost，而没有考虑 RS 曲线的弧长
   next_node->SetHeuCost(optimal_path_cost);
 }
 
@@ -445,7 +447,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   PiecewiseJerkSpeedProblem piecewise_jerk_problem(
       num_of_knots, delta_t, {0.0, std::abs(init_v), std::abs(init_a)});
 
-  // set end constraints
+  // 初始化 x_bounds, dx_bounds, ddx_bounds
   std::vector<std::pair<double, double>> x_bounds(num_of_knots,
                                                   {0.0, path_length});
 
@@ -457,7 +459,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
                                                    {0.0, upper_dx});
   std::vector<std::pair<double, double>> ddx_bounds(num_of_knots,
                                                     {-max_acc, max_acc});
-
+  // 初始化末状态
   x_bounds[num_of_knots - 1] = std::make_pair(path_length, path_length);
   dx_bounds[num_of_knots - 1] = std::make_pair(0.0, 0.0);
   ddx_bounds[num_of_knots - 1] = std::make_pair(0.0, 0.0);
@@ -478,7 +480,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
     return false;
   }
 
-  // extract output
+  // extract output - 输出平滑后的位置，速度，加速度
   const std::vector<double>& s = piecewise_jerk_problem.opt_x();
   const std::vector<double>& ds = piecewise_jerk_problem.opt_dx();
   const std::vector<double>& dds = piecewise_jerk_problem.opt_ddx();
@@ -576,10 +578,10 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
 // 轨迹切割是按照挡位变化（前进、后退）进行切割
 bool HybridAStar::TrajectoryPartition(
     const HybridAStartResult& result, // const 左值引用 - 可以接收一个左值，也可以接受一个右值
-    std::vector<HybridAStartResult>* partitioned_result) { // 这里传递的是一个左值，可以被赋值？
-  // 此时 result 已经是 起始节点 -> 目标节点 的信息
+    std::vector<HybridAStartResult>* partitioned_result) { // 这里传递的是一个左值，可以被赋值
   // 输出：partitioned_result
 
+  // 此时 result 已经是 起始节点 -> 目标节点 的信息
   const auto& x = result.x;
   const auto& y = result.y;
   const auto& phi = result.phi;
@@ -591,7 +593,7 @@ bool HybridAStar::TrajectoryPartition(
 
   size_t horizon = x.size();
   partitioned_result->clear();
-  partitioned_result->emplace_back(); // 
+  partitioned_result->emplace_back(); // 调用 HybridAStartResult 的默认构造函数
 
   auto* current_traj = &(partitioned_result->back());
   // 根据档位变化进行轨迹切割
@@ -606,38 +608,54 @@ bool HybridAStar::TrajectoryPartition(
     
   // for 循环计算每个节点的 heading_angle 和 trakcing_angle，来判断档位；
   // 如果和起始档位不同，说明行驶方向发生变化，需要进行轨迹切割。
-  for (size_t i = 0; i < horizon - 1; ++i) {
+  for (size_t i = 0; i < horizon - 1; ++i) { // ++i 是左值
     heading_angle = phi[i];
     const Vec2d tracking_vector(x[i + 1] - x[i], y[i + 1] - y[i]);
     tracking_angle = tracking_vector.Angle();
     bool gear =
         std::abs(common::math::NormalizeAngle(tracking_angle - heading_angle)) <
         (M_PI_2);
+    
+    // 如果在某个节点处的档位与起始节点处的档位不一致：
+    // 这里的处理需要注意：假设所有节点为 A(forward)->B(forward)->C(backward)->D(backward)
+    // 由 B 到 C 发生了档位变化，需要将 B 加入当前轨迹中（作为当前轨迹的最后一个元素），
+    // 然后 partitioned_result->emplace_back() 会新加入一个类型为 HybridAStarResult 的元素（里面都是空的）
+    // 作为新的轨迹段，让 current_traj 指针重新指向新的轨迹段的首地址，
+    // 同时，也需要将 B 节点加入新的轨迹段，作为新的轨迹段的第一个元素，之后继续循环，将后续节点加入这条轨迹段中。
+
     if (gear != current_gear) {
+      // 这里相当于把 B 节点加入当前的轨迹段中，作为当前轨迹段的最后一个元素
       current_traj->x.push_back(x[i]);
       current_traj->y.push_back(y[i]);
       current_traj->phi.push_back(phi[i]);
+
+      // 在容器末尾加入一个 HybridAStarResult 类型的元素，作为新的轨迹段
       partitioned_result->emplace_back();
+
+      // 让 current_traj 指针指向新的轨迹段的首地址
       current_traj = &(partitioned_result->back());
-      current_gear = gear;
+      current_gear = gear; // 更新档位状态
     }
+    // 这里对应把 B 节点加入新的轨迹段，作为新轨迹段的第一个节点
     current_traj->x.push_back(x[i]);
     current_traj->y.push_back(y[i]);
     current_traj->phi.push_back(phi[i]);
   }
+  // 最后，把目标节点的信息存入当前的轨迹段中
   current_traj->x.push_back(x.back());
   current_traj->y.push_back(y.back());
   current_traj->phi.push_back(phi.back());
   
   // 在上面对轨迹进行分段后，需要对每段轨迹进行速度规划，即对轨迹点的 a，v，steer 进行赋值
   // 这里采用了两种方法：
-  //  1. 数值优化，使用 QP 求解五次多项式进行速度规划
+  //  1. 数值优化，使用 QP 进行速度规划
   //  2. 使用相邻点的静态信息进行规划
   const auto start_timestamp = std::chrono::system_clock::now();
 
   // Retrieve v, a and steer from path
   for (auto& result : *partitioned_result) {
     if (FLAGS_use_s_curve_speed_smooth) {
+      // 对分割后的每段轨迹进行速度规划
       if (!GenerateSCurveSpeedAcceleration(&result)) { // Piecewise jerk 速度规划
         AERROR << "GenerateSCurveSpeedAcceleration fail";
         return false;
