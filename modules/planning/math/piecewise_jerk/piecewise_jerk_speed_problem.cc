@@ -76,19 +76,22 @@ void PiecewiseJerkSpeedProblem::CalculateKernel(std::vector<c_float>* P_data,
   ++value_index;
 
   auto delta_s_square = delta_s_ * delta_s_;
-  // x(i)''^2 * (w_ddx + 2 * w_dddx / delta_s^2)
+  // P 矩阵的二阶导数部分的第一个对角线元素
+  // x(i)''^2 * (w_ddx + w_dddx / delta_s^2) 
   columns[2 * n].emplace_back(2 * n,
                               (weight_ddx_ + weight_dddx_ / delta_s_square) /
                                   (scale_factor_[2] * scale_factor_[2]));
   ++value_index;
-
+  // P 矩阵的二阶导数部分的对角线元素（除了对角线上的第一个元素和最后一个元素）
+  // x(i)''^2 * (w_ddx + 2 * w_dddx / delta_s^2)
   for (int i = 1; i < n - 1; ++i) {
     columns[2 * n + i].emplace_back(
         2 * n + i, (weight_ddx_ + 2.0 * weight_dddx_ / delta_s_square) /
                        (scale_factor_[2] * scale_factor_[2]));
     ++value_index;
   }
-
+  // P 矩阵的二阶导数部分的最后一个对角线元素
+  // x(i)''^2 * (w_ddx + w_dddx / delta_s^2 + w_end_ddx)
   columns[3 * n - 1].emplace_back(
       3 * n - 1,
       (weight_ddx_ + weight_dddx_ / delta_s_square + weight_end_state_[2]) /
@@ -131,7 +134,7 @@ void PiecewiseJerkSpeedProblem::CalculateOffset(std::vector<c_float>* q) {
     }
   }
 
-  if (has_end_state_ref_) {
+  if (has_end_state_ref_) { // 有终止状态约束的话，增加终止状态约束（终止的位置，速度，加速度）
     q->at(n - 1) +=
         -2.0 * weight_end_state_[0] * end_state_ref_[0] / scale_factor_[0];
     q->at(2 * n - 1) +=

@@ -135,18 +135,22 @@ bool ReedShepp::GenerateRSPs(const std::shared_ptr<Node3d> start_node,
 bool ReedShepp::GenerateRSP(const std::shared_ptr<Node3d> start_node,
                             const std::shared_ptr<Node3d> end_node,
                             std::vector<ReedSheppPath>* all_possible_paths) {
+  // 为了方便计算，将起点和终点坐标转换到以起点为原点，以起点方向为 x 方向的坐标系中。
   double dx = end_node->GetX() - start_node->GetX();
   double dy = end_node->GetY() - start_node->GetY();
   double dphi = end_node->GetPhi() - start_node->GetPhi();
   double c = std::cos(start_node->GetPhi());
   double s = std::sin(start_node->GetPhi());
   // normalize the initial point to (0,0,0)
-  double x = (c * dx + s * dy) * max_kappa_;
+  // 这里乘以 max_kappa，相当于除以最小转弯半径，即将转弯半径缩放到 1。
+  double x = (c * dx + s * dy) * max_kappa_; // 计算坐标转换后新的 x 和 y
   double y = (-s * dx + c * dy) * max_kappa_;
-  if (!SCS(x, y, dphi, all_possible_paths)) {
+  // 转换后的起点为 (0，0，0)，终点为 (x，y，dphi)
+  // 因为这里默认起点为 (0, 0, 0)，所以只需要传入终点的位姿就可以计算处 RS 曲线
+  if (!SCS(x, y, dphi, all_possible_paths)) { // 直线-圆弧-直线
     ADEBUG << "Fail at SCS";
   }
-  if (!CSC(x, y, dphi, all_possible_paths)) {
+  if (!CSC(x, y, dphi, all_possible_paths)) { // 圆弧-直线-圆弧
     ADEBUG << "Fail at CSC";
   }
   if (!CCC(x, y, dphi, all_possible_paths)) {
@@ -196,7 +200,7 @@ bool ReedShepp::CSC(const double x, const double y, const double phi,
                     std::vector<ReedSheppPath>* all_possible_paths) {
   RSPParam LSL1_param;
   LSL(x, y, phi, &LSL1_param);
-  double LSL1_lengths[3] = {LSL1_param.t, LSL1_param.u, LSL1_param.v};
+  double LSL1_lengths[3] = {LSL1_param.t, LSL1_param.u, LSL1_param.v}; // 计算得到弧长
   char LSL1_types[] = "LSL";
   if (LSL1_param.flag &&
       !SetRSP(3, LSL1_lengths, LSL1_types, all_possible_paths)) {

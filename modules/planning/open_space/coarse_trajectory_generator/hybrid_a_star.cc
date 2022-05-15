@@ -43,6 +43,9 @@ HybridAStar::HybridAStar(const PlannerOpenSpaceConfig& open_space_conf) {
   xy_grid_resolution_ =
       planner_open_space_config_.warm_start_config().xy_grid_resolution(); // xy_grid_resolution_ = 0.3
   delta_t_ = planner_open_space_config_.delta_t();
+
+
+  
   traj_forward_penalty_ =
       planner_open_space_config_.warm_start_config().traj_forward_penalty();
   traj_back_penalty_ =

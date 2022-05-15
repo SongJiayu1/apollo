@@ -34,12 +34,17 @@ class ObstacleContainer {
 
   bool VPresentationObstacle(
       const double* ROI_distance_approach_parking_boundary) {
+      // 这里由传入的 double 类型的坐标值，转换成障碍物顶点坐标 Vec2d 
+      // std::vector<Vec2d> 表示相连接的一组顶点，表示一个障碍物
+      // std::vector<std::vector<Vec2d>> obstacles_vertices_vec_ 是一个 vector，
+      // 里面的每个元素表示一个障碍物的所有顶点
     obstacles_num_ = 4;
     obstacles_edges_num_.resize(4, 1);
-    obstacles_edges_num_ << 2, 1, 2, 1;
+    // 定义障碍物边的个数，第一条有两个边，第二条有一个边，依此类推。
+    obstacles_edges_num_ << 2, 1, 2, 1; 
     size_t index = 0;
     for (size_t i = 0; i < obstacles_num_; i++) {
-      std::vector<Vec2d> vertices_cw;
+      std::vector<Vec2d> vertices_cw; // 存放一个障碍物的全部顶点信息
       for (int j = 0; j < obstacles_edges_num_(i, 0) + 1; j++) {
         Vec2d vertice =
             Vec2d(ROI_distance_approach_parking_boundary[index],
@@ -260,7 +265,8 @@ bool DistanceSmoothing(
     Eigen::MatrixXd* control_result_ds_, Eigen::MatrixXd* time_result_ds_,
     Eigen::MatrixXd* dual_l_result_ds_, Eigen::MatrixXd* dual_n_result_ds_,
     double& dual_time, double& ipopt_time) {
-  // load Warm Start result(horizon is the "N", not the size of step points)
+
+  // load Warm Start result (horizon is the "N", not the size of step points)
   size_t horizon_ = hybrid_a_star_result->x.size() - 1;
   // nominal sampling time
   float ts_ = planner_open_space_config.delta_t();
@@ -272,7 +278,7 @@ bool DistanceSmoothing(
   Eigen::VectorXd steer;
   Eigen::VectorXd a;
 
-  // TODO(Runxin): extend logics in future
+  // TODO(Runxin): extend logics in future - 若初步的轨迹点较少，则插值
   if (horizon_ <= 10 && horizon_ > 2 &&
       planner_open_space_config.enable_linear_interpolation()) {
     // TODO(Runxin): extend this number
@@ -319,7 +325,8 @@ bool DistanceSmoothing(
       ADEBUG << "i: " << i << ", val: " << hybrid_a_star_result->steer[i];
     }
     ADEBUG << "interpolated steer: \n" << steer;
-  } else {
+  } else { 
+    // 用 Hybrid A Star 的输出来初始化状态分量和控制分量
     x = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(
         hybrid_a_star_result->x.data(), horizon_ + 1);
     y = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(
@@ -333,7 +340,7 @@ bool DistanceSmoothing(
     a = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(
         hybrid_a_star_result->a.data(), horizon_);
   }
-
+  // 初始化状态量和控制量，把上面的状态分量和控制分量放到各自对应的矩阵中去。
   Eigen::MatrixXd xWS = Eigen::MatrixXd::Zero(4, horizon_ + 1);
   Eigen::MatrixXd uWS = Eigen::MatrixXd::Zero(2, horizon_);
   xWS.row(0) = x;
@@ -342,10 +349,10 @@ bool DistanceSmoothing(
   xWS.row(3) = v;
   uWS.row(0) = steer;
   uWS.row(1) = a;
-
+  // 初始状态
   Eigen::MatrixXd x0(4, 1);
   x0 << sx, sy, sphi, 0.0;
-
+  // 结束状态
   Eigen::MatrixXd xF(4, 1);
   xF << ex, ey, ephi, 0.0;
 
@@ -374,6 +381,7 @@ bool DistanceSmoothing(
 
   const auto t1 = std::chrono::system_clock::now();
   if (FLAGS_use_dual_variable_warm_start) {
+    // 求对偶变量的初始解
     bool dual_variable_warm_start_status = dual_variable_warm_start_ptr->Solve(
         horizon_, ts_, ego_, obstacles.GetObstaclesNum(),
         obstacles.GetObstaclesEdgesNum(), obstacles.GetAMatrix(),
@@ -417,8 +425,10 @@ bool DistancePlan(HybridAStar* hybridA_ptr, ObstacleContainer* obstacles_ptr,
                   ResultContainer* result_ptr, double sx, double sy,
                   double sphi, double ex, double ey, double ephi,
                   double* XYbounds) {
+  // 载入 Open Space Planner 的配置文件，设置参数值
+  // 在 apollo/modules/planning/conf/planner_open_space_config.pb.txt
   apollo::planning::PlannerOpenSpaceConfig planner_open_space_config_;
-  ACHECK(apollo::cyber::common::GetProtoFromFile(
+  ACHECK(apollo::cyber::common::GetProtoFromFile( 
       FLAGS_planner_open_space_config_filename, &planner_open_space_config_))
       << "Failed to load open space config file "
       << FLAGS_planner_open_space_config_filename;
@@ -436,7 +446,9 @@ bool DistancePlan(HybridAStar* hybridA_ptr, ObstacleContainer* obstacles_ptr,
   std::vector<double> XYbounds_(XYbounds, XYbounds + 4);
 
   const auto start_timestamp = std::chrono::system_clock::now();
-  // 先调用Hybrid A* 产生初步的轨迹作为 warm start，输出：hybrid_astar_result；注：这里传入的是一个地址
+
+  // 先调用Hybrid A* 产生初步的轨迹作为 warm start，
+  // 输出：hybrid_astar_result；注：这里传入的是一个地址
   if (!hybridA_ptr->Plan(sx, sy, sphi, ex, ey, ephi, XYbounds_,
                          obstacles_ptr->GetObstacleVec(),
                          &hybrid_astar_result)) {

@@ -68,12 +68,13 @@ void PiecewiseJerkPathProblem::CalculateKernel(std::vector<c_float>* P_data,
 
   auto delta_s_square = delta_s_ * delta_s_;
   // P 矩阵的二阶导数部分的第一个对角线元素
-  // x(i)''^2 * (w_ddx + 2 * w_dddx / delta_s^2) 
+  // x(i)''^2 * (w_ddx + w_dddx / delta_s^2) 
   columns[2 * n].emplace_back(2 * n,
                               (weight_ddx_ + weight_dddx_ / delta_s_square) /
                                   (scale_factor_[2] * scale_factor_[2]));
   ++value_index;
   // P 矩阵的二阶导数部分的对角线元素（除了对角线上的第一个元素和最后一个元素）
+  // x(i)''^2 * (w_ddx + 2 * w_dddx / delta_s^2)
   for (int i = 1; i < n - 1; ++i) {
     columns[2 * n + i].emplace_back(
         2 * n + i, (weight_ddx_ + 2.0 * weight_dddx_ / delta_s_square) /
@@ -81,6 +82,7 @@ void PiecewiseJerkPathProblem::CalculateKernel(std::vector<c_float>* P_data,
     ++value_index;
   }
   // P 矩阵的二阶导数部分的最后一个对角线元素
+   // x(i)''^2 * (w_ddx + w_dddx / delta_s^2 + w_end_ddx)
   columns[3 * n - 1].emplace_back(
       3 * n - 1,
       (weight_ddx_ + weight_dddx_ / delta_s_square + weight_end_state_[2]) /

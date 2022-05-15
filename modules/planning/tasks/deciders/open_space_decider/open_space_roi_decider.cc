@@ -1587,7 +1587,7 @@ bool OpenSpaceRoiDecider::LoadObstacleInHyperPlanes(Frame *const frame) {
   }
   return true;
 }
-
+// 构造障碍物的超平面集合
 bool OpenSpaceRoiDecider::GetHyperPlanes(
     const size_t &obstacles_num, const Eigen::MatrixXi &obstacles_edges_num,
     const std::vector<std::vector<Vec2d>> &obstacles_vertices_vec,

@@ -47,7 +47,7 @@ bool DistanceApproachProblem::Solve(
     Eigen::MatrixXd* dual_n_result) {
   // TODO(QiL) : evaluate whether need to new it everytime
   PERF_BLOCK_START();
-
+  // DistanceApproachInterface 类是所有 DistanceApproach 的基类
   DistanceApproachInterface* ptop = nullptr;
 
   if (planner_open_space_config_.distance_approach_config()
@@ -149,7 +149,7 @@ bool DistanceApproachProblem::Solve(
       "mu_init", planner_open_space_config_.distance_approach_config()
                      .ipopt_config()
                      .ipopt_mu_init());
-
+  // 
   Ipopt::ApplicationReturnStatus status = app->Initialize();
   if (status != Ipopt::Solve_Succeeded) {
     AERROR << "*** Distance Approach problem error during initialization!";

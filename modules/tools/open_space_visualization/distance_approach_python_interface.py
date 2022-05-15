@@ -56,7 +56,7 @@ class DistancePlanner(object):
 
     def AddObstacle(self, ROI_distance_approach_parking_boundary):
         lib.AddObstacle(self.obstacles, POINTER(
-            c_double)(ROI_distance_approach_parking_boundary))
+            c_double)(ROI_distance_approach_parking_boundary))  # 这里面定义了所有障碍物的顶点坐标
 
     def DistancePlan(self, sx, sy, sphi, ex, ey, ephi, XYbounds):
         return lib.DistancePlan(self.warm_start_planner, self.obstacles, self.result, c_double(sx),
