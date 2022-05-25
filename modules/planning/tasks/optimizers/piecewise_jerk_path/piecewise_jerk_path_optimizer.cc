@@ -43,9 +43,11 @@ PiecewiseJerkPathOptimizer::PiecewiseJerkPathOptimizer(
     const TaskConfig& config,
     const std::shared_ptr<DependencyInjector>& injector)
     : PathOptimizer(config, injector) {
-  ACHECK(config_.has_piecewise_jerk_path_optimizer_config());
+  ACHECK(config_.has_piecewise_jerk_path_optimizer_config()); // 确认配置文件
 }
-
+/********************************************
+ * 路径规划的主流程 入口
+ * *****************************************/
 common::Status PiecewiseJerkPathOptimizer::Process(
     const SpeedData& speed_data, const ReferenceLine& reference_line,
     const common::TrajectoryPoint& init_point, const bool path_reusable,
@@ -54,14 +56,17 @@ common::Status PiecewiseJerkPathOptimizer::Process(
   if (FLAGS_enable_skip_path_tasks && path_reusable) {
     return Status::OK();
   }
+  // 这里的 TrajectoryPoint 数据类型定义在： modules/common/proto/pnc_point.pb.h 
   ADEBUG << "Plan at the starting point: x = " << init_point.path_point().x()
          << ", y = " << init_point.path_point().y()
          << ", and angle = " << init_point.path_point().theta();
   common::TrajectoryPoint planning_start_point = init_point;
-  if (FLAGS_use_front_axe_center_in_path_planning) {
+  if (FLAGS_use_front_axe_center_in_path_planning) { // 如果使用前轴中心作为规划起点
+    // 从后轴中心推导到前轴中心
     planning_start_point =
-        InferFrontAxeCenterFromRearAxeCenter(planning_start_point);
+        InferFrontAxeCenterFromRearAxeCenter(planning_start_point); 
   }
+  // 将规划起点坐标转换到 Frenet 坐标系下。
   const auto init_frenet_state =
       reference_line.ToFrenetFrame(planning_start_point);
 
@@ -73,14 +78,16 @@ common::Status PiecewiseJerkPathOptimizer::Process(
                            : config_.piecewise_jerk_path_optimizer_config()
                                  .default_path_config();
 
-  std::array<double, 5> w = {
-      config.l_weight(),
+  std::array<double, 5> w = { // 设置 P 矩阵的权重 
+      config.l_weight(), // weight_x_
       config.dl_weight() *
           std::fmax(init_frenet_state.first[1] * init_frenet_state.first[1],
-                    5.0),
-      config.ddl_weight(), config.dddl_weight(), 0.0};
-
-  const auto& path_boundaries =
+                    5.0), // weight_dx_，这里的 init_frenet_state.first[1]
+                    // 就是 s_condition[1]，即为 s 方向的速度
+      config.ddl_weight(), config.dddl_weight(), 0.0}; // weight_ddx_, weight_dddx_
+  
+  // 这里的 path_boundaries 类型是 std::vector<PathBoundary>
+  const auto& path_boundaries = 
       reference_line_info_->GetCandidatePathBoundaries();
   ADEBUG << "There are " << path_boundaries.size() << " path boundaries.";
   const auto& reference_path_data = reference_line_info_->path_data();
@@ -111,7 +118,7 @@ common::Status PiecewiseJerkPathOptimizer::Process(
     std::array<double, 3> end_state = {0.0, 0.0, 0.0};
 
     if (!FLAGS_enable_force_pull_over_open_space_parking_test) {
-      // pull over scenario
+      // pull over scenario - 判断是否为 pull over 场景
       // set end lateral to be at the desired pull over destination
       const auto& pull_over_status =
           injector_->planning_context()->planning_status().pull_over();
@@ -119,9 +126,12 @@ common::Status PiecewiseJerkPathOptimizer::Process(
           pull_over_status.position().has_x() &&
           pull_over_status.position().has_y() &&
           path_boundary.label().find("pullover") != std::string::npos) {
+        // 如果确定是 pullover 场景，并且满足相应条件，
+        // 那么将 pull_over_status.position() 转换到 SL 坐标系下，以此构造 SLPoint，用 l 值确定 end_state
         common::SLPoint pull_over_sl;
         reference_line.XYToSL(pull_over_status.position(), &pull_over_sl);
         end_state[0] = pull_over_sl.l();
+        
       }
     }
 
@@ -133,7 +143,7 @@ common::Status PiecewiseJerkPathOptimizer::Process(
     std::vector<double> path_reference_l(path_boundary_size, 0.0);
     bool is_valid_path_reference = false;
     size_t path_reference_size = reference_path_data.path_reference().size();
-
+    // 判断是否为 regular 场景
     if (path_boundary.label().find("regular") != std::string::npos &&
         reference_path_data.is_valid_path_reference()) {
       ADEBUG << "path label is: " << path_boundary.label();
@@ -154,13 +164,18 @@ common::Status PiecewiseJerkPathOptimizer::Process(
 
     const auto& veh_param =
         common::VehicleConfigHelper::GetConfig().vehicle_param();
-    const double lat_acc_bound =
+    // 计算 l 方向的最大加速度，即 lat_acc_bound = kmax - kref
+    //    kmax - 车辆可以执行的最大的瞬时曲率，由最大前轮转角和轴距计算出来
+    //    kref - 参考线上某个参考点处的参考线曲率
+    const double lat_acc_bound = 
         std::tan(veh_param.max_steer_angle() / veh_param.steer_ratio()) /
         veh_param.wheel_base();
+    // 构造 l'' 的边界极值，放入 ddl_bounds 中
     std::vector<std::pair<double, double>> ddl_bounds;
     for (size_t i = 0; i < path_boundary_size; ++i) {
       double s = static_cast<double>(i) * path_boundary.delta_s() +
                  path_boundary.start_s();
+      // 从参考线上拿曲率信息
       double kappa = reference_line.GetNearestReferencePoint(s).kappa();
       ddl_bounds.emplace_back(-lat_acc_bound - kappa, lat_acc_bound - kappa);
     }
@@ -170,12 +185,18 @@ common::Status PiecewiseJerkPathOptimizer::Process(
         path_reference_size, path_boundary.delta_s(), is_valid_path_reference,
         path_boundary.boundary(), ddl_bounds, w, max_iter, &opt_l, &opt_dl,
         &opt_ddl);
+        // 注：这里的 path_boundary - class PathBoundary
+        // path_boundary.boundary() - 是 PathBoundary 的成员变量，
+        //      类型是 std::vector<std::pair<double, double>> 
 
     if (res_opt) {
       for (size_t i = 0; i < path_boundary_size; i += 4) {
         ADEBUG << "for s[" << static_cast<double>(i) * path_boundary.delta_s()
                << "], l = " << opt_l[i] << ", dl = " << opt_dl[i];
       }
+      // 根据优化后的 l，dl，ddl，构造 PiecewiseJerkTrajectory1d
+      // 注：PiecewiseJerkTrajectory1d 里面包含了多段 ConstantJerkTrajectory1d
+      // 得到离散的路标点，但是只有 Frenet 坐标系下的信息，还没有 x，y （笛卡尔坐标系）信息
       auto frenet_frame_path =
           ToPiecewiseJerkPath(opt_l, opt_dl, opt_ddl, path_boundary.delta_s(),
                               path_boundary.start_s());
@@ -200,6 +221,7 @@ common::Status PiecewiseJerkPathOptimizer::Process(
   return Status::OK();
 }
 
+// 由后轴中心推导出前轴中心的坐标
 common::TrajectoryPoint
 PiecewiseJerkPathOptimizer::InferFrontAxeCenterFromRearAxeCenter(
     const common::TrajectoryPoint& traj_point) {
@@ -215,6 +237,7 @@ PiecewiseJerkPathOptimizer::InferFrontAxeCenterFromRearAxeCenter(
   return ret;
 }
 
+// 把路标点的坐标换算到以后轴中心为原点的坐标系下
 std::vector<common::PathPoint>
 PiecewiseJerkPathOptimizer::ConvertPathPointRefFromFrontAxeToRearAxe(
     const PathData& path_data) {
@@ -260,6 +283,7 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
 
   // TODO(Hongyi): update end_state settings
   piecewise_jerk_problem.set_end_state_ref({1000.0, 0.0, 0.0}, end_state); // weight_end_state, end_state_ref
+  
   // pull over scenarios
   // Because path reference might also make the end_state != 0
   // we have to exclude this condition here
@@ -294,7 +318,7 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
     piecewise_jerk_problem.set_x_ref(std::move(weight_x_ref_vec),
                                      std::move(path_reference_l_ref));
   }
-
+  // 设置各项权重
   piecewise_jerk_problem.set_weight_x(w[0]);
   piecewise_jerk_problem.set_weight_dx(w[1]);
   piecewise_jerk_problem.set_weight_ddx(w[2]);
@@ -303,21 +327,26 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
   piecewise_jerk_problem.set_scale_factor({1.0, 10.0, 100.0});
 
   auto start_time = std::chrono::system_clock::now();
-
+  
+  // 设置 l, l', l'' 的上下界约束
   piecewise_jerk_problem.set_x_bounds(lat_boundaries);
   piecewise_jerk_problem.set_dx_bounds(-FLAGS_lateral_derivative_bound_default,
                                        FLAGS_lateral_derivative_bound_default);
   piecewise_jerk_problem.set_ddx_bounds(ddl_bounds);
-
-  // Estimate lat_acc and jerk boundary from vehicle_params
+  
+  // 计算并设置 l''' 的边界约束
+  // Estimate lateral jerk boundary from vehicle_params
   const auto& veh_param =
       common::VehicleConfigHelper::GetConfig().vehicle_param();
   const double axis_distance = veh_param.wheel_base();
-  const double max_yaw_rate = // 前轮转角的最大角速度
-      veh_param.max_steer_angle_rate() / veh_param.steer_ratio() / 2.0; // 由方向盘转动的最大角速度，计算得到前轮转角的最大角速度
+  // 前轮转角的最大角速度（由方向盘转动的最大角速度，计算得到前轮转角的最大角速度）
+  const double max_yaw_rate = 
+      veh_param.max_steer_angle_rate() / veh_param.steer_ratio() / 2.0;
+       
   const double jerk_bound = EstimateJerkBoundary(std::fmax(init_state[1], 1.0), // 速度小于 1 的时候取 1
                                                  axis_distance, max_yaw_rate);
   piecewise_jerk_problem.set_dddx_bound(jerk_bound);
+
   // 调用 OSQP 进行优化
   bool success = piecewise_jerk_problem.Optimize(max_iter);
 
@@ -337,6 +366,13 @@ bool PiecewiseJerkPathOptimizer::OptimizePath(
   return true;
 }
 
+/**********************************************************************
+* 这里使用 jerk 恒定曲线（即 3 次多项式），依据 Δs、l、l'、l''，resolution 
+* 插值得到离散的路标点
+* 详情见：
+* modules\planning\common\trajectory1d\piecewise_jerk_trajectory1d.cc
+* modules\planning\common\trajectory1d\constant_jerk_trajectory1d.cc
+***********************************************************************/
 FrenetFramePath PiecewiseJerkPathOptimizer::ToPiecewiseJerkPath(
     const std::vector<double>& x, const std::vector<double>& dx,
     const std::vector<double>& ddx, const double delta_s,
@@ -347,7 +383,7 @@ FrenetFramePath PiecewiseJerkPathOptimizer::ToPiecewiseJerkPath(
 
   PiecewiseJerkTrajectory1d piecewise_jerk_traj(x.front(), dx.front(),
                                                 ddx.front());
-
+  // 从 1 开始，可以得到（n-1）个 segment
   for (std::size_t i = 1; i < x.size(); ++i) {
     const auto dddl = (ddx[i] - ddx[i - 1]) / delta_s;
     piecewise_jerk_traj.AppendSegment(dddl, delta_s);
@@ -383,13 +419,13 @@ double PiecewiseJerkPathOptimizer::EstimateJerkBoundary(
 double PiecewiseJerkPathOptimizer::GaussianWeighting(
     const double x, const double peak_weighting,
     const double peak_weighting_x) const {
-  double std = 1 / (std::sqrt(2 * M_PI) * peak_weighting);
-  double u = peak_weighting_x * std;
-  double x_updated = x * std;
+  double std = 1 / (std::sqrt(2 * M_PI) * peak_weighting); // 方差
+  double u = peak_weighting_x * std; // 均值
+  double x_updated = x * std; // 自变量
   ADEBUG << peak_weighting *
                 exp(-0.5 * (x - peak_weighting_x) * (x - peak_weighting_x));
   ADEBUG << Gaussian(u, std, x_updated);
-  return Gaussian(u, std, x_updated);
+  return Gaussian(u, std, x_updated); // 返回一个正态分布函数，Gaussian(均值，方差，自变量)
 }
 
 }  // namespace planning

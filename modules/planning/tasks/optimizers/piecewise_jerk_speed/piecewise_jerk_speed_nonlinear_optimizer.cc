@@ -84,7 +84,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
   std::vector<double> acceleration;
 
   const auto qp_start = std::chrono::system_clock::now();
-
+  // 使用 QP 进行速度点集平滑（构造了一个 PiecewiseJerkSpeedProblem）
   const auto qp_smooth_status =
       OptimizeByQP(speed_data, &distance, &velocity, &acceleration);
 
@@ -96,12 +96,12 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
     speed_data->clear();
     return qp_smooth_status;
   }
-
+  // 查看 SpeedLimit 是否可行
   const bool speed_limit_check_status = CheckSpeedLimitFeasibility();
 
   if (speed_limit_check_status) {
     const auto curvature_smooth_start = std::chrono::system_clock::now();
-
+    // 对道路曲率进行平滑，为后面的 NLP 优化做准备
     const auto path_curvature_smooth_status = SmoothPathCurvature(path_data);
 
     const auto curvature_smooth_end = std::chrono::system_clock::now();
@@ -116,7 +116,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
     }
 
     const auto speed_limit_smooth_start = std::chrono::system_clock::now();
-
+    // 对 SpeedLimit 进行平滑
     const auto speed_limit_smooth_status = SmoothSpeedLimit();
 
     const auto speed_limit_smooth_end = std::chrono::system_clock::now();
@@ -430,7 +430,9 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothPathCurvature(
 Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByQP(
     SpeedData* const speed_data, std::vector<double>* distance,
     std::vector<double>* velocity, std::vector<double>* acceleration) {
+
   std::array<double, 3> init_states = {s_init_, s_dot_init_, s_ddot_init_};
+  
   PiecewiseJerkSpeedProblem piecewise_jerk_problem(num_of_knots_, delta_t_,
                                                    init_states);
   piecewise_jerk_problem.set_dx_bounds(
@@ -477,25 +479,27 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByNLP(
     std::vector<double>* acceleration) {
   static std::mutex mutex_tnlp;
   UNIQUE_LOCK_MULTITHREAD(mutex_tnlp);
-  // Set optimizer instance
+  // 1. Set optimizer instance - 构造非线性优化求解器实例，它继承了 IPOPT 库
   auto ptr_interface = new PiecewiseJerkSpeedNonlinearIpoptInterface(
       s_init_, s_dot_init_, s_ddot_init_, delta_t_, num_of_knots_,
       total_length_, s_dot_max_, s_ddot_min_, s_ddot_max_, s_dddot_min_,
       s_dddot_max_);
-
+  // 2. 设置 s 的上下界范围
   ptr_interface->set_safety_bounds(s_bounds_);
 
   // Set weights and reference values
   const auto& config =
       config_.piecewise_jerk_nonlinear_speed_optimizer_config();
-
+  // 3. 传入平滑后的 path_curvature 曲线和 speed_limit 曲线
   ptr_interface->set_curvature_curve(smoothed_path_curvature_);
 
   // TODO(Hongyi): add debug_info for speed_limit fitting curve
   ptr_interface->set_speed_limit_curve(smoothed_speed_limit_);
-
+  
+  // 4. 设置 warm start
   // TODO(Jinyun): refactor warms start setting API
   if (config.use_warm_start()) {
+    // 这里的 distance，velocity，acceleration 都是 OptimizeByQP 优化后的结果。
     const auto& warm_start_distance = *distance;
     const auto& warm_start_velocity = *velocity;
     const auto& warm_start_acceleration = *acceleration;
@@ -517,7 +521,8 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByNLP(
     }
     ptr_interface->set_warm_start(warm_start);
   }
-
+  // 5. 设置 ipopt 优化变量 s 的参考值，
+  // 即 QP 优化出来的 distance 向量做 ipopt 优化的参考值。
   if (FLAGS_use_smoothed_dp_guide_line) {
     ptr_interface->set_reference_spatial_distance(*distance);
     // TODO(Jinyun): move to confs
@@ -533,14 +538,15 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByNLP(
     ptr_interface->set_soft_safety_bounds(s_soft_bounds_);
     ptr_interface->set_w_soft_s_bound(config.soft_s_bound_weight());
   }
-
+  // 6. 设置优化变量的权重值
+  // 包括加速度、加加速度、向心加速度权重。
   ptr_interface->set_w_overall_a(config.acc_weight());
   ptr_interface->set_w_overall_j(config.jerk_weight());
   ptr_interface->set_w_overall_centripetal_acc(config.lat_acc_weight());
-
+  // 设置参考速度及参考速度权重，这边的参考速度直接设为了 cruise_speed。
   ptr_interface->set_reference_speed(cruise_speed_);
   ptr_interface->set_w_reference_speed(config.ref_v_weight());
-
+  // 7. 构造接口类的智能指针来存放优化问题的具体形式 ，并调用 IPOPT 进行求解
   Ipopt::SmartPtr<Ipopt::TNLP> problem = ptr_interface;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> app = IpoptApplicationFactory();
 

@@ -34,7 +34,7 @@ class PiecewiseJerkSpeedOptimizer : public SpeedOptimizer {
  private:
   common::Status Process(const PathData& path_data,
                          const common::TrajectoryPoint& init_point,
-                         SpeedData* const speed_data) override;
+                         SpeedData* const speed_data) override; // 表示重写了父类的虚函数
 };
 
 }  // namespace planning

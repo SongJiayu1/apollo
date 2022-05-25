@@ -27,12 +27,13 @@
 namespace apollo {
 namespace planning {
 
+// SpeedData 类是继承基类 SpeedPoint 速度点的 vector 类，本质上是一个 vector 容器类
 class SpeedData : public std::vector<common::SpeedPoint> {
  public:
-  SpeedData() = default;
+  SpeedData() = default; // 默认构造函数
 
-  virtual ~SpeedData() = default;
-
+  virtual ~SpeedData() = default; // 默认析构函数
+  // explicit 修饰的构造函数不能被隐式调用；禁止类对象之间的隐式转换
   explicit SpeedData(std::vector<common::SpeedPoint> speed_points);
 
   void AppendSpeedPoint(const double s, const double time, const double v,

@@ -57,8 +57,9 @@ std::pair<double, double> ReedShepp::calc_tau_omega(const double u,
 bool ReedShepp::ShortestRSP(const std::shared_ptr<Node3d> start_node,
                             const std::shared_ptr<Node3d> end_node,
                             std::shared_ptr<ReedSheppPath> optimal_path) {
-  std::vector<ReedSheppPath> all_possible_paths;
-  if (!GenerateRSPs(start_node, end_node, &all_possible_paths)) {
+  std::vector<ReedSheppPath> all_possible_paths; 
+  if (!GenerateRSPs(start_node, end_node, &all_possible_paths)) { // 这里用 vector 的地址作为实参，
+  // 用一个 vector<ReedSheppPath> 类型的指针做形参接受这个地址。
     ADEBUG << "Fail to generate different combination of Reed Shepp "
               "paths";
     return false;
@@ -162,7 +163,7 @@ bool ReedShepp::GenerateRSP(const std::shared_ptr<Node3d> start_node,
   if (!CCSC(x, y, dphi, all_possible_paths)) {
     ADEBUG << "Fail at CCSC";
   }
-  if (!CCSCC(x, y, dphi, all_possible_paths)) {
+  if (!CCSCC(x, y, dphi, all_possible_paths)) { // 圆弧-圆弧-直线-圆弧-圆弧
     ADEBUG << "Fail at CCSCC";
   }
   if (all_possible_paths->empty()) {
@@ -712,10 +713,14 @@ void ReedShepp::LSL(const double x, const double y, const double phi,
 
 void ReedShepp::LSR(const double x, const double y, const double phi,
                     RSPParam* param) {
+  // 这里 P 点的坐标是(x+sin(phi), y-1.0-cos(phi))
+  // 注：这里的 P 点是为了求 t，u，v 而需要的辅助点，它的坐标由终点坐标求得。
+  // 注：终点的姿态已知，为 (x, y, phi)。
+  // 这里的终点姿态，实际上是已经把起始点转换成 (0, 0, 0) 而得到的。
   std::pair<double, double> polar =
       common::math::Cartesian2Polar(x + std::sin(phi), y - 1.0 - std::cos(phi));
-  double u1 = polar.first * polar.first;
-  double t1 = polar.second;
+  double u1 = polar.first * polar.first; // P 点极坐标系下的半径 r 的平方
+  double t1 = polar.second; // P 点的极坐标系下的角度 
   double u = 0.0;
   double theta = 0.0;
   double t = 0.0;
@@ -727,9 +732,10 @@ void ReedShepp::LSR(const double x, const double y, const double phi,
     v = common::math::NormalizeAngle(t - phi);
     if (t >= 0.0 && v >= 0.0) {
       param->flag = true;
-      param->u = u;
-      param->t = t;
-      param->v = v;
+      // t, u, v 为需要求的 LSR 曲线对应的弧长
+      param->u = u; // S-直行弧长
+      param->t = t; // L-左转弧长
+      param->v = v; // R-右转弧长
     }
   }
 }

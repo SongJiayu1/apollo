@@ -32,11 +32,14 @@ void PiecewiseJerkPathProblem::CalculateKernel(std::vector<c_float>* P_data,
                                                std::vector<c_int>* P_indices,
                                                std::vector<c_int>* P_indptr) {
   const int n = static_cast<int>(num_of_knots_); // 待平滑的路径点的个数
-  const int num_of_variables = 3 * n; // 每个点处要优化 x，x'，x'' 三个变量 - 就是 l 方向的 l，l'，l''
+  const int num_of_variables = 3 * n; // 待优化的变量的个数
+  // 每个点处要优化 x，x'，x'' 三个变量 - 就是 l 方向的 l，l'，l''
   const int num_of_nonzeros = num_of_variables + (n - 1);
+
   // 这里定义的 columns，里面存放的就是 P 矩阵的信息
-  // 假设需要优化 4 和路径点，即 n = 4,，则 number_of_variables = 12，相当于 columns 有 12 行，
-  // 每一行是一个 vector，有 12 个元素，每个元素是一个 pair，存放 index 和 value
+  // 假设需要优化 4 个路径点，即 n = 4,，则 number_of_variables = 12，
+  // 相当于 columns 有 12 ，
+  // 每一行是一个 vector，有 12 个元素，每个元素是一个 pair，存放 index 和 value。
   std::vector<std::vector<std::pair<c_int, c_float>>> columns(num_of_variables);
   int value_index = 0;
   
@@ -98,13 +101,13 @@ void PiecewiseJerkPathProblem::CalculateKernel(std::vector<c_float>* P_data,
   }
 
   CHECK_EQ(value_index, num_of_nonzeros);
-
+  // 转换成 CSC_matrix 的形式
   int ind_p = 0;
   for (int i = 0; i < num_of_variables; ++i) {
     P_indptr->push_back(ind_p);
     for (const auto& row_data_pair : columns[i]) {
-      P_data->push_back(row_data_pair.second * 2.0);
-      P_indices->push_back(row_data_pair.first);
+      P_data->push_back(row_data_pair.second * 2.0); // P_data 来记录 Hessian 矩阵的元素
+      P_indices->push_back(row_data_pair.first); // P_indices 来记录各个元素所在列的行号？？？
       ++ind_p;
     }
   }

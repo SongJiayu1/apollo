@@ -24,8 +24,11 @@ namespace apollo {
 namespace planning {
 
 using apollo::common::PathPoint;
+// PointFactory 是点工厂类，可以直接造路径点，速度点的数据结构
 using apollo::common::util::PointFactory;
-
+// TEST 是 google gtest 库的函数，专门做单元测试
+// 就是做一个正向的路径点插值测试
+// TEST(TestCaseName，TestName)
 TEST(DiscretizedPathTest, basic_test) {
   const double s1 = 0.0;
   const double s2 = s1 + std::sqrt(1.0 + 1.0);

@@ -44,8 +44,6 @@ HybridAStar::HybridAStar(const PlannerOpenSpaceConfig& open_space_conf) {
       planner_open_space_config_.warm_start_config().xy_grid_resolution(); // xy_grid_resolution_ = 0.3
   delta_t_ = planner_open_space_config_.delta_t();
 
-
-  
   traj_forward_penalty_ =
       planner_open_space_config_.warm_start_config().traj_forward_penalty();
   traj_back_penalty_ =
@@ -255,7 +253,8 @@ double HybridAStar::HoloObstacleHeuristic(std::shared_ptr<Node3d> next_node) {
 }
 
 bool HybridAStar::GetResult(HybridAStartResult* result) {
-  std::shared_ptr<Node3d> current_node = final_node_;
+  std::shared_ptr<Node3d> current_node = final_node_; 
+  // 注：这个 final_node_ 是由 RS 曲线上的最后一个路径点的信息构造的。
   // hybrid_a_x，y，phi 用来存放全部的节点（起始节点，终止节点，全部的中间扩展节点）
   std::vector<double> hybrid_a_x;
   std::vector<double> hybrid_a_y;
@@ -276,12 +275,14 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
     }
     // 注意：这里的 x，y，就是 traversed_x，y，里面的第一个元素是上一个节点的坐标，最后一个元素是当前节点的坐标。
     // 这里先 reverse 再 pop_back，就是将上一个节点的坐标 pop 出去了，保留了中间节点和当前节点的信息。
+    // 例如：当前节点是 B，上一个节点是 A，则 x_ 里面是：A->b1->b2->B
     std::reverse(x.begin(), x.end());
     std::reverse(y.begin(), y.end());
     std::reverse(phi.begin(), phi.end());
     x.pop_back();
     y.pop_back();
     phi.pop_back();
+    // 现在 x_: B->b2->b1；此时 A 已经被 pop 出去了
     hybrid_a_x.insert(hybrid_a_x.end(), x.begin(), x.end());
     hybrid_a_y.insert(hybrid_a_y.end(), y.begin(), y.end());
     hybrid_a_phi.insert(hybrid_a_phi.end(), phi.begin(), phi.end());
@@ -303,8 +304,9 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
   (*result).y = hybrid_a_y;
   (*result).phi = hybrid_a_phi;
   
-  // 将 Hybrid A* 计算的轨迹结果，按照行驶的正反方向切换，分割为数段，分别逆向翻转轨迹点
+  // 将 Hybrid A* 计算的轨迹结果，按照行驶的正反方向切换，分割为数段，
   // 然后重新拼接在一起，进行速度规划，就是最终可以发布供车行驶的轨迹
+  // 注：之所以需要轨迹切割，是因为需要对每段轨迹分别进行速度规划。
   if (!GetTemporalProfile(result)) { // 对 result 进行时序排序，这里传递的是指针
     AERROR << "GetSpeedProfile from Hybrid Astar path fails";
     return false;
@@ -378,7 +380,7 @@ bool HybridAStar::GenerateSpeedAcceleration(HybridAStartResult* result) {
 
 bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   /*
-    使用 QP 的方法，进行速度规划，求 v，a，steer
+    使用 QP 的方法，进行速度规划，求 s， v，a，steer
     这里的 result 指针指向的是分段后的某一段轨迹的首地址
   */
   // sanity check
@@ -431,7 +433,9 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   const double max_acc_jerk = 0.5;
   const double delta_t = 0.2;
 
-  SpeedData speed_data;
+  SpeedData speed_data; // SpeedData 实际上是 vector<SpeedPoint> 
+  // SpeedPoint 在这里定义：modules/common/proto/pnc_point.pb.h
+  // SpeedPoint: s, t, v, a, da 
 
   // TODO(Jinyun): explore better time horizon heuristic - 根据这段轨迹的总位移，计算所需要的总时间
   const double path_length = result->accumulated_s.back();
@@ -452,14 +456,17 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
 
   // 初始化 x_bounds, dx_bounds, ddx_bounds
   std::vector<std::pair<double, double>> x_bounds(num_of_knots,
-                                                  {0.0, path_length});
+                                                  {0.0, path_length}); 
+  // 这部分初始化 s 方向的范围，从 0.0-path_length 
 
   const double max_v = gear ? max_forward_v : max_reverse_v;
   const double max_acc = gear ? max_forward_acc : max_reverse_acc;
 
-  const auto upper_dx = std::fmax(max_v, std::abs(init_v));
-  std::vector<std::pair<double, double>> dx_bounds(num_of_knots,
+  const auto upper_dx = std::fmax(max_v, std::abs(init_v)); // 速度上限
+  // 设置纵向速度上下边界
+  std::vector<std::pair<double, double>> dx_bounds(num_of_knots, 
                                                    {0.0, upper_dx});
+  // 设置纵向加速度上下边界
   std::vector<std::pair<double, double>> ddx_bounds(num_of_knots,
                                                     {-max_acc, max_acc});
   // 初始化末状态
@@ -488,7 +495,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   const std::vector<double>& ds = piecewise_jerk_problem.opt_dx();
   const std::vector<double>& dds = piecewise_jerk_problem.opt_ddx();
 
-  // assign speed point by gear
+  // assign speed point by gear - 在 speed_data 末尾加入一个 SpeedPoint 点。
   speed_data.AppendSpeedPoint(s[0], 0.0, ds[0], dds[0], 0.0);
   const double kEpislon = 1.0e-6;
   const double sEpislon = 1.0e-6;
@@ -499,6 +506,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
              << total_t;
       break;
     }
+    // 通过优化后的 s，ds，dds，构造新的 SpeedPoint，循环加入 speed_data 中。
     speed_data.AppendSpeedPoint(s[i], delta_t * static_cast<double>(i), ds[i],
                                 dds[i], (dds[i] - dds[i - 1]) / delta_t);
     // cut the speed data when it is about to meet end condition
@@ -507,8 +515,9 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
     }
   }
 
-  // 构造 path_data
-  DiscretizedPath path_data;
+  // 构造 path_data - path_data 包含 x, y, phi, s
+  // speed_data 包含 s, t, v, a, jerk，所有可以将二者根据 s 值融合。
+  DiscretizedPath path_data; // path_data 本质上是 vector<PathPoint>
   for (size_t i = 0; i < path_points_size; ++i) {
     common::PathPoint path_point;
     path_point.set_x(result->x[i]);
@@ -517,7 +526,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
     path_point.set_s(result->accumulated_s[i]);
     path_data.push_back(std::move(path_point));
   }
-
+  
   HybridAStartResult combined_result;
 
   // TODO(Jinyun): move to confs
@@ -561,7 +570,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   // recalc step size
   path_points_size = combined_result.x.size();
 
-  // load steering from phi
+  // load steering from phi - 从航向角的偏差计算 steering
   for (size_t i = 0; i + 1 < path_points_size; ++i) {
     double discrete_steer =
         (combined_result.phi[i + 1] - combined_result.phi[i]) *
@@ -582,7 +591,6 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
 bool HybridAStar::TrajectoryPartition(
     const HybridAStartResult& result, // const 左值引用 - 可以接收一个左值，也可以接受一个右值
     std::vector<HybridAStartResult>* partitioned_result) { // 这里传递的是一个左值，可以被赋值
-  // 输出：partitioned_result
 
   // 此时 result 已经是 起始节点 -> 目标节点 的信息
   const auto& x = result.x;
@@ -681,6 +689,9 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
   std::vector<HybridAStartResult> partitioned_results;
   // 轨迹分割 - 按照行驶方向对轨迹进行分割，给每段轨迹添加 v，a，steer 信息（速度规划）
   if (!TrajectoryPartition(*result, &partitioned_results)) {
+    // 注：这里 TrajectoryPartition() 的实参，第一个是 result 指针的解引用，
+    // 第二个是 partitioned_resulsts 的地址。
+    // 分割后的轨迹段存放在 partitioned_results 这个容器中。
     AERROR << "TrajectoryPartition fail";
     return false;
   }
@@ -689,13 +700,16 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
   HybridAStartResult stitched_result;
   for (const auto& result : partitioned_results) {
     std::copy(result.x.begin(), result.x.end() - 1,
-              std::back_inserter(stitched_result.x));
+              std::back_inserter(stitched_result.x)); 
+    // 在 stitched_result.x 这个容器末尾插入 result.x 这个容器的第一个到倒数第二个元素
+    // 注：这里是这样的，假设第一段是 A->B->C，则第二段是 C->D->E，所以插入第一段的时候末尾的节点不插入。
     std::copy(result.y.begin(), result.y.end() - 1,
               std::back_inserter(stitched_result.y));
     std::copy(result.phi.begin(), result.phi.end() - 1,
               std::back_inserter(stitched_result.phi));
     std::copy(result.v.begin(), result.v.end() - 1,
               std::back_inserter(stitched_result.v));
+
     std::copy(result.a.begin(), result.a.end(),
               std::back_inserter(stitched_result.a));
     std::copy(result.steer.begin(), result.steer.end(),

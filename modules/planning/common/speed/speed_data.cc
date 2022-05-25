@@ -37,13 +37,18 @@ namespace planning {
 
 using apollo::common::SpeedPoint;
 
+// 带参构造函数，输入参数是一个由多个 SpeedPoint 构成的 vector 容器对象 speed_points
+// 冒号后面为类对象初始化方式，直接将参数 speed_points move 到 SpeedData 类对象容器中
 SpeedData::SpeedData(std::vector<SpeedPoint> speed_points)
     : std::vector<SpeedPoint>(std::move(speed_points)) {
+  // 然后构造函数对 SpeedData 这个容器里的对象进行排序
+  // sort 函数的第 3 个参数代表排序的条件，即按照速度点的时间升序进行排序    
   std::sort(begin(), end(), [](const SpeedPoint& p1, const SpeedPoint& p2) {
-    return p1.t() < p2.t();
-  });
+      return p1.t() < p2.t();}
+    );
 }
-
+// 在 SpeedData 类对象末尾插入一个速度点
+// 用 s, t, v, a, da 来构造一个 SpeedPoint，然后加入 SpeedData 
 void SpeedData::AppendSpeedPoint(const double s, const double time,
                                  const double v, const double a,
                                  const double da) {
@@ -56,6 +61,8 @@ void SpeedData::AppendSpeedPoint(const double s, const double time,
   push_back(common::util::PointFactory::ToSpeedPoint(s, time, v, a, da));
 }
 
+// Evaluate 通常指插值，用时间去速度规划数组 SpeedData 类对象里插值出 s, v, a, da
+// 插值结果存放到函数输入的最后一个参数 speed_point 里
 bool SpeedData::EvaluateByTime(const double t,
                                common::SpeedPoint* const speed_point) const {
   if (size() < 2) {
@@ -95,7 +102,8 @@ bool SpeedData::EvaluateByTime(const double t,
   }
   return true;
 }
-
+// Evaluate通常指插值，用纵向位置去速度规划数组SpeedData类对象里插值出 t, v, a, da
+// 插值结果存放到函数输入的最后一个参数 speed_point 里
 bool SpeedData::EvaluateByS(const double s,
                             common::SpeedPoint* const speed_point) const {
   if (size() < 2) {
@@ -135,21 +143,24 @@ bool SpeedData::EvaluateByS(const double s,
   }
   return true;
 }
-
+// 返回速度规划的总时间
+// 就是 SpeedData 类对象里 速度点数组 最后一个点的时间减第一个点的时间。
 double SpeedData::TotalTime() const {
   if (empty()) {
     return 0.0;
   }
   return back().t() - front().t();
 }
-
+// 返回速度规划的纵向总位移（就是 delta s），
+// 就是 SpeedData 类对象里速度点数组最后一个点的 s 值减第一个点的 s 值。
 double SpeedData::TotalLength() const {
   if (empty()) {
     return 0.0;
   }
   return back().s() - front().s();
 }
-
+// 返回 debug 字符串
+// 其实就是获取速度点数组容器 SpeedData 中前 11 个点的信息构成字符串来 debug
 std::string SpeedData::DebugString() const {
   const auto limit = std::min(
       size(), static_cast<size_t>(FLAGS_trajectory_point_num_for_debug));

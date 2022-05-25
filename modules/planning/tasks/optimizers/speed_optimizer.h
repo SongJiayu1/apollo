@@ -39,7 +39,7 @@ class SpeedOptimizer : public Task {
  protected:
   virtual common::Status Process(const PathData& path_data,
                                  const common::TrajectoryPoint& init_point,
-                                 SpeedData* const speed_data) = 0;
+                                 SpeedData* const speed_data) = 0; // 纯虚函数
 
   void RecordDebugInfo(const SpeedData& speed_data);
   void RecordDebugInfo(const SpeedData& speed_data,

@@ -41,27 +41,44 @@ void PiecewiseJerkSpeedProblem::set_penalty_dx(std::vector<double> penalty_dx) {
   penalty_dx_ = std::move(penalty_dx);
 }
 
+// 构造目标函数中的 Hessian 矩阵
 void PiecewiseJerkSpeedProblem::CalculateKernel(std::vector<c_float>* P_data,
                                                 std::vector<c_int>* P_indices,
                                                 std::vector<c_int>* P_indptr) {
   const int n = static_cast<int>(num_of_knots_);
-  const int kNumParam = 3 * n;
+  const int kNumParam = 3 * n;  // 待平滑的路径点的个数
   const int kNumValue = 4 * n - 1;
+  // P 矩阵的信息实际上存放在 coloumns 这个二维数组中，数组中的每个元素是一个 pair。
+  // pair 的第一个元素是一个 index，第二个元素是存放的权重的值。
   std::vector<std::vector<std::pair<c_int, c_float>>> columns;
-  columns.resize(kNumParam);
+  columns.resize(kNumParam); 
   int value_index = 0;
 
-  // x(i)^2 * w_x_ref
+  // 1. 构造 Px 矩阵
+  // x(i)^2 * w_x_ref 
   for (int i = 0; i < n - 1; ++i) {
     columns[i].emplace_back(
         i, weight_x_ref_ / (scale_factor_[0] * scale_factor_[0]));
     ++value_index;
-  }
-  // x(n-1)^2 * (w_x_ref + w_end_x)
+  } // 注：这里的 columns[i] 表示第 i 列
+  // 例如：i = 1 时，columns[1].emplace_back(index, weight_x_ref_)
+  //    表示：第 1 列的 vector 中插入一个元素，元素是 pair<index, weight_x_ref_>，
+  //    这里的 index 表示元素在第一列中的行数，即在第 1 行，
+  //    这个信息正好是构造 CSC matrix 时 p_indices 需要的。
+
+  // x(n-1)^2 * (w_x_ref + w_end_x) 
+  // 构造 Px 矩阵的最后一项（加入了对终点状态的权重）
   columns[n - 1].emplace_back(n - 1, (weight_x_ref_ + weight_end_state_[0]) /
                                          (scale_factor_[0] * scale_factor_[0]));
   ++value_index;
+  /*     i=0            i=1          i=2                i=3
+      <0, w_x_ref>
+                    <1, w_x_ref>
+                                  <2, w_x_ref>
+                                                <3, w_x_ref + w_x_end[0]>
+  */
 
+  // 2. 构造 Px' 矩阵
   // x(i)'^2 * (w_dx_ref + penalty_dx)
   for (int i = 0; i < n - 1; ++i) {
     columns[n + i].emplace_back(n + i,
@@ -74,7 +91,8 @@ void PiecewiseJerkSpeedProblem::CalculateKernel(std::vector<c_float>* P_data,
       2 * n - 1, (weight_dx_ref_ + penalty_dx_[n - 1] + weight_end_state_[1]) /
                      (scale_factor_[1] * scale_factor_[1]));
   ++value_index;
-
+  
+  // 3. 构造 Px'' 矩阵
   auto delta_s_square = delta_s_ * delta_s_;
   // P 矩阵的二阶导数部分的第一个对角线元素
   // x(i)''^2 * (w_ddx + w_dddx / delta_s^2) 
@@ -107,13 +125,13 @@ void PiecewiseJerkSpeedProblem::CalculateKernel(std::vector<c_float>* P_data,
   }
 
   CHECK_EQ(value_index, kNumValue);
-
+  // 构造 CSC-矩阵
   int ind_p = 0;
   for (int i = 0; i < kNumParam; ++i) {
-    P_indptr->push_back(ind_p);
+    P_indptr->push_back(ind_p); 
     for (const auto& row_data_pair : columns[i]) {
-      P_data->push_back(row_data_pair.second * 2.0);
-      P_indices->push_back(row_data_pair.first);
+      P_data->push_back(row_data_pair.second * 2.0); // 把每一列中的不为零的元素加入 P_data 中
+      P_indices->push_back(row_data_pair.first); // 把每一列中不为零的元素的行信息加入 P_indices 中。
       ++ind_p;
     }
   }

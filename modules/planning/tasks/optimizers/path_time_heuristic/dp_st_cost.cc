@@ -116,6 +116,9 @@ double DpStCost::GetObstacleCost(const StGraphPoint& st_graph_point) {
 
   double cost = 0.0;
 
+  // 判断是使用 st_drivable_boundary 还是使用 st_boundary
+  // default: FLAGS_use_st_drivable_boundary = False
+  // 判断 STGraphPoint 是否在可行使范围内
   if (FLAGS_use_st_drivable_boundary) {
     // TODO(Jiancheng): move to configs
     static constexpr double boundary_resolution = 0.1;
@@ -129,7 +132,7 @@ double DpStCost::GetObstacleCost(const StGraphPoint& st_graph_point) {
       return kInf;
     }
   }
-
+  // 遍历所有的 obstacles，对 cost 进行求和
   for (const auto* obstacle : obstacles_) {
     // Not applying obstacle approaching cost to virtual obstacle like created
     // stop fences
@@ -151,13 +154,14 @@ double DpStCost::GetObstacleCost(const StGraphPoint& st_graph_point) {
     }
     if (t < boundary.min_t() || t > boundary.max_t()) {
       continue;
-    }
+    } 
+    // 如果发生碰撞，那么 cost 为无穷大
     if (boundary.IsPointInBoundary(st_graph_point.point())) {
       return kInf;
     }
     double s_upper = 0.0;
     double s_lower = 0.0;
-
+    // 计算不碰撞时的 cost
     int boundary_index = boundary_map_[boundary.id()];
     if (boundary_cost_[boundary_index][st_graph_point.index_t()].first < 0.0) {
       boundary.GetBoundarySRange(t, &s_upper, &s_lower);
@@ -167,24 +171,30 @@ double DpStCost::GetObstacleCost(const StGraphPoint& st_graph_point) {
       s_upper = boundary_cost_[boundary_index][st_graph_point.index_t()].first;
       s_lower = boundary_cost_[boundary_index][st_graph_point.index_t()].second;
     }
-    if (s < s_lower) {
-      const double follow_distance_s = config_.safe_distance();
+    if (s < s_lower) { // 跟车情况
+      // 安全跟车距离，默认为 20 米
+      const double follow_distance_s = config_.safe_distance(); 
+      
       if (s + follow_distance_s < s_lower) {
-        continue;
-      } else {
+        // 如果在跟车情况下，距离前方障碍车距离大于安全跟车距离，则 cost 不需要累加。
+        continue; 
+      } else { 
+        // 跟车情况下，距离前车距离小于安全距离，则依据 s_diff 计算 cost，并对 cost 进行累加
         auto s_diff = follow_distance_s - s_lower + s;
         cost += config_.obstacle_weight() * config_.default_obstacle_cost() *
                 s_diff * s_diff;
       }
-    } else if (s > s_upper) {
+    } else if (s > s_upper) { // 超车情况：超过障碍物
       const double overtake_distance_s =
-          StGapEstimator::EstimateSafeOvertakingGap();
+          StGapEstimator::EstimateSafeOvertakingGap(); // 安全超车距离，默认为 20.0 m
       if (s > s_upper + overtake_distance_s) {  // or calculated from velocity
-        continue;
+        continue; // 如果超过障碍车的距离大于 安全超车距离，那么没有 cost。
       } else {
+        // 超过障碍车，但是距离障碍车的距离小于 安全超车距离，那么 s_diff 越小，cost 越大
         auto s_diff = overtake_distance_s + s_upper - s;
         cost += config_.obstacle_weight() * config_.default_obstacle_cost() *
-                s_diff * s_diff;
+                s_diff * s_diff; 
+        // 注：这里的 obstacle_weight = 1.0，default_obstacle_cost = 1e10
       }
     }
   }

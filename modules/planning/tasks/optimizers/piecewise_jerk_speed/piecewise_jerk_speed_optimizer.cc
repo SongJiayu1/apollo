@@ -88,7 +88,7 @@ Status PiecewiseJerkSpeedOptimizer::Process(const PathData& path_data,
                                         veh_param.max_acceleration());
   piecewise_jerk_problem.set_dddx_bound(FLAGS_longitudinal_jerk_lower_bound,
                                         FLAGS_longitudinal_jerk_upper_bound);
-
+  // 设置参考速度的权重和参考速度
   piecewise_jerk_problem.set_dx_ref(config.ref_v_weight(),
                                     reference_line_info_->GetCruiseSpeed());
 
@@ -104,7 +104,8 @@ Status PiecewiseJerkSpeedOptimizer::Process(const PathData& path_data,
       if (!boundary->GetUnblockSRange(curr_t, &s_upper, &s_lower)) {
         continue;
       }
-      switch (boundary->boundary_type()) {
+      // 根据不同的决策，来更新 STBoundary
+      switch (boundary->boundary_type()) { 
         case STBoundary::BoundaryType::STOP:
         case STBoundary::BoundaryType::YIELD:
           s_upper_bound = std::fmin(s_upper_bound, s_upper);
@@ -140,19 +141,24 @@ Status PiecewiseJerkSpeedOptimizer::Process(const PathData& path_data,
     double curr_t = i * delta_t;
     // get path_s
     SpeedPoint sp;
-    reference_speed_data.EvaluateByTime(curr_t, &sp);
+    reference_speed_data.EvaluateByTime(curr_t, &sp); // 插值得到新的 SpeedPoint
     const double path_s = sp.s();
     x_ref.emplace_back(path_s);
     // get curvature
     PathPoint path_point = path_data.GetPathPointWithPathS(path_s);
+    // 对横向加速度进行约束
+    // 用 DP 的结果查询 t 时刻的曲率（t 时刻的曲率本是不可知的），
+    // 将非线性约束转换为线性约束
     penalty_dx.push_back(std::fabs(path_point.kappa()) *
-                         config.kappa_penalty_weight());
+                         config.kappa_penalty_weight()); 
+                         // default: kappa_penalty_weight = 2000.0
     // get v_upper_bound
     const double v_lower_bound = 0.0;
     double v_upper_bound = FLAGS_planning_upper_speed_limit;
     v_upper_bound = speed_limit.GetSpeedLimitByS(path_s);
     s_dot_bounds.emplace_back(v_lower_bound, std::fmax(v_upper_bound, 0.0));
   }
+  // default: ref_s_weight = 10.0
   piecewise_jerk_problem.set_x_ref(config.ref_s_weight(), std::move(x_ref));
   piecewise_jerk_problem.set_penalty_dx(penalty_dx);
   piecewise_jerk_problem.set_dx_bounds(std::move(s_dot_bounds));

@@ -32,16 +32,26 @@ namespace planning {
 class PiecewiseJerkTrajectory1d : public Curve1d {
  public:
   PiecewiseJerkTrajectory1d(const double p, const double v, const double a);
+  // 参数 p 上一段匀加加速度运动的终点位置
+  // 参数 v 上一段匀加加速度运动的终点速度
+  // 参数 a 上一段匀加加速度运动的终点加速度
 
   virtual ~PiecewiseJerkTrajectory1d() = default;
 
+  // 插值函数，Apollo 里见到 Evaluate 基本都是插值
+  // order 表示插值的量的阶数，param 为参数时间
   double Evaluate(const std::uint32_t order, const double param) const;
 
+  // 返回多段匀加加速度运动 1 维轨迹类所覆盖的时间的总长度
   double ParamLength() const;
-
+   
+  // 返回这条多段匀加加速度运动 1 维轨迹类的名称，默认为空
   std::string ToString() const;
-
+  
+  // 往 PiecewiseJerkTrajectory1d 类对象里增加一段 ConstantJerkTrajectory1d
   void AppendSegment(const double jerk, const double param);
+  // 参数：保持不变的这个加加速度 jerk
+  // 参数: param 代表这一段匀加加速度运动持续的时间
 
  private:
   std::vector<ConstantJerkTrajectory1d> segments_;
@@ -51,7 +61,7 @@ class PiecewiseJerkTrajectory1d : public Curve1d {
   double last_v_;
 
   double last_a_;
-
+  // 储存每一段 ConstantJerkTrajectory1d 的终点时间，上一段的终点即这一段的起点时间
   std::vector<double> param_;
 };
 

@@ -131,7 +131,7 @@ const std::vector<PathBoundary>& ReferenceLineInfo::GetCandidatePathBoundaries()
 }
 
 void ReferenceLineInfo::SetCandidatePathBoundaries(
-    std::vector<PathBoundary>&& path_boundaries) {
+    std::vector<PathBoundary>&& path_boundaries) { // 这里是一个右值引用？？？（需要进一步了解）
   candidate_path_boundaries_ = std::move(path_boundaries);
 }
 

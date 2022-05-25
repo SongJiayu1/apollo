@@ -32,12 +32,21 @@ ConstantJerkTrajectory1d::ConstantJerkTrajectory1d(const double p0,
                                                    const double j,
                                                    const double param)
     : p0_(p0), v0_(v0), a0_(a0), param_(param), jerk_(j) {
+  // CHECK_GT 判断 param > FLAGS_numerical_epsilon?
+  // FLAGS_numerical_epsilon 去 modules\planning\common\planning_gflags.cc中
+  // 取出 numerical_epsilon的值 1e-6，否则报错
   CHECK_GT(param, FLAGS_numerical_epsilon);
-  p1_ = Evaluate(0, param_);
-  v1_ = Evaluate(1, param_);
-  a1_ = Evaluate(2, param_);
+
+  // 计算匀加加速运动的终点的相对纵向位置
+  p1_ = Evaluate(0, param_); // 根据时间零阶插值即为位移
+  // 计算匀加加速运动的终点的速度
+  v1_ = Evaluate(1, param_); // 根据时间 1 阶插值即为速度
+  // 计算匀加加速运动的终点的加速度
+  a1_ = Evaluate(2, param_); // 根据时间 2 阶插值即为加速度
 }
 
+// 根据时间 param 及阶数 order，实现匀加加速过程中对位移
+// 速度，加速度及加加速度的插值
 double ConstantJerkTrajectory1d::Evaluate(const std::uint32_t order,
                                           const double param) const {
   switch (order) {
@@ -58,7 +67,7 @@ double ConstantJerkTrajectory1d::Evaluate(const std::uint32_t order,
       return 0.0;
   }
 }
-
+// 下面都是一些返回数据成员的函数，包括匀加加速度的时间，位移，速度，加速度，加加速度等
 double ConstantJerkTrajectory1d::start_position() const { return p0_; }
 
 double ConstantJerkTrajectory1d::start_velocity() const { return v0_; }

@@ -29,11 +29,18 @@ namespace planning {
 
 class ConstantJerkTrajectory1d : public Curve1d {
  public:
+  // ConstantJerkTrajectory1d 类带参构造函数
   ConstantJerkTrajectory1d(const double p0, const double v0, const double a0,
                            const double jerk, const double param);
+  // p0 -初始纵向位置
+  // v0 - 初速度，a0 - 初始加速度
+  // jerk - 加加速度
+  // param - 匀加加速运动持续总时间
 
   virtual ~ConstantJerkTrajectory1d() = default;
 
+  // 根据时间 param 即阶数 order，实现匀加加速过程中对位移
+  // 速度，加速度及加加速度的插值
   double Evaluate(const std::uint32_t order, const double param) const;
 
   double ParamLength() const;
