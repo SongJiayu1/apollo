@@ -37,6 +37,8 @@ SpiralReferenceLineSmoother::SpiralReferenceLineSmoother(
     const ReferenceLineSmootherConfig& config)
     : ReferenceLineSmoother(config) {}
 
+// raw_reference_line 为原始参考线，即地图中 lane 的节点产生的参考线
+// smoothed_reference_line 为平滑后的参考线作为输出
 bool SpiralReferenceLineSmoother::Smooth(
     const ReferenceLine& raw_reference_line,
     ReferenceLine* const smoothed_reference_line) {
@@ -63,7 +65,7 @@ bool SpiralReferenceLineSmoother::Smooth(
       ReferencePoint rlp = raw_reference_line.GetReferencePoint(s);
       raw_point2d.emplace_back(rlp.x(), rlp.y());
     }
-
+    // 使用 IPOPT 进行平滑
     Smooth(raw_point2d, &opt_theta, &opt_kappa, &opt_dkappa, &opt_s, &opt_x,
            &opt_y);
   } else {
@@ -241,16 +243,18 @@ bool SpiralReferenceLineSmoother::Smooth(std::vector<Eigen::Vector2d> point2d,
                                          std::vector<double>* ptr_x,
                                          std::vector<double>* ptr_y) const {
   CHECK_GT(point2d.size(), 1);
-
+  // 构造一个新的求解器实例
   SpiralProblemInterface* ptop = new SpiralProblemInterface(point2d);
-
+  // 设置平滑点距离锚点的最大偏移距离
   ptop->set_default_max_point_deviation(config_.spiral().max_deviation());
+  // 设置起始点参数，Apollo 中起始点位置不能被平滑，因此均设置为固定点。
   if (fixed_start_point_) {
     ptop->set_start_point(fixed_start_x_, fixed_start_y_, fixed_start_theta_,
                           fixed_start_kappa_, fixed_start_dkappa_);
   }
-
+  // 设置终止点参数
   ptop->set_end_point_position(fixed_end_x_, fixed_end_y_);
+  
   ptop->set_element_weight_curve_length(config_.spiral().weight_curve_length());
   ptop->set_element_weight_kappa(config_.spiral().weight_kappa());
   ptop->set_element_weight_dkappa(config_.spiral().weight_dkappa());

@@ -85,20 +85,22 @@ void SpiralProblemInterface::get_optimization_results(
   *ptr_x = opt_x_;
   *ptr_y = opt_y_;
 }
-
+// 定义问题规模
 bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
                                           int& nnz_h_lag,
                                           IndexStyleEnum& index_style) {
   // number of variables
+  // n定义了变量个数，由于每个点包含了 5 个优化变量和 1 个两点之间弧长的变量，所以：
   n = num_of_points_ * 5 + num_of_points_ - 1;
   num_of_variables_ = n;
 
   // number of constraints
+  // m 定义了约束的数量，除起始点外，每个点包含 x，y 的两个约束和每个点的位置平移约束
   // b. positional equality constraints;
   // totally 2 * (num_of_points - 1) considering x and y separately
-  m = (num_of_points_ - 1) * 2;
+  m = (num_of_points_ - 1) * 2;  // x，y 的约束，不包括第一个点
   // a. positional movements; totally num_of_points
-  m += num_of_points_;
+  m += num_of_points_;  // 位置平移约束
   num_of_constraints_ = m;
 
   // number of nonzero constraint jacobian.
@@ -110,9 +112,12 @@ bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
   index_style = IndexStyleEnum::C_STYLE;
   return true;
 }
-
+// 定义问题的变量的上下边界和约束的上下边界
 bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
                                              int m, double* g_l, double* g_u) {
+  // x_l，x_u 定义了优化变量的下边界和上边界
+  // g_l，g_u 定义了约束的下边界和上边界
+  // m 为约束的数量，n 为变量的数量
   CHECK_EQ(n, num_of_variables_);
   CHECK_EQ(m, num_of_constraints_);
 
@@ -132,6 +137,7 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
     double y_lower = 0.0;
     double y_upper = 0.0;
     if (i == 0 && has_fixed_start_point_) {
+      // 对于第一个点优化变量约束为等式约束，所以其上下边界均为其本身
       theta_lower = start_theta_;
       theta_upper = start_theta_;
       kappa_lower = start_kappa_;
@@ -144,6 +150,7 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
       y_upper = start_y_;
 
     } else if (i + 1 == num_of_points_ && has_fixed_end_point_) {
+      // 最后一个点的 x, y, theta, kappa, dkappa 全部是严格的等式约束
       theta_lower = end_theta_;
       theta_upper = end_theta_;
       kappa_lower = end_kappa_;
@@ -155,6 +162,7 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
       y_lower = end_y_;
       y_upper = end_y_;
     } else if (i + 1 == num_of_points_ && has_fixed_end_point_position_) {
+      // 对于最后一个点的优化变量，只有 x, y 是严格的等式约束
       theta_lower = relative_theta_[i] - M_PI * 0.2;
       theta_upper = relative_theta_[i] + M_PI * 0.2;
       kappa_lower = -0.25;
@@ -165,7 +173,8 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
       x_upper = end_x_;
       y_lower = end_y_;
       y_upper = end_y_;
-    } else {
+    } else { 
+      // 对于中间点的约束
       theta_lower = relative_theta_[i] - M_PI * 0.2;
       theta_upper = relative_theta_[i] + M_PI * 0.2;
       kappa_lower = -0.25;
@@ -228,6 +237,7 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
   return true;
 }
 
+// 给出优化变量的初始值，初始值为原始参考线上点的状态
 bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
                                                 bool init_z, double* z_L,
                                                 double* z_U, int m,
@@ -267,6 +277,9 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
   return true;
 }
 
+// 定义目标函数
+// 主：参数中 new_x 会反馈出求解器是否更新了优化变量，如果更新了优化变量，
+// 我们就要重新更新螺旋曲线函数，利用新的优化变量构造螺旋曲线
 bool SpiralProblemInterface::eval_f(int n, const double* x, bool new_x,
                                     double& obj_value) {
   CHECK_EQ(n, num_of_variables_);
@@ -280,15 +293,17 @@ bool SpiralProblemInterface::eval_f(int n, const double* x, bool new_x,
     double delta_s = spiral_curve.ParamLength();
 
     obj_value += delta_s * weight_curve_length_;
-
+    // 这里对每两个节点之间又均分出了 5 个内部节点，分别将内部节点的曲率和
+    // 曲率变化率加权求和
     for (int j = 0; j < num_of_internal_points_; ++j) {
       double ratio =
           static_cast<double>(j) / static_cast<double>(num_of_internal_points_);
+      // 内部节点在曲线的弧长
       double s = ratio * delta_s;
-
+      // 曲率加权和
       double kappa = spiral_curve.Evaluate(1, s);
       obj_value += kappa * kappa * weight_kappa_;
-
+      // 曲率变化率加权和
       double dkappa = spiral_curve.Evaluate(2, s);
       obj_value += dkappa * dkappa * weight_dkappa_;
     }
@@ -296,11 +311,12 @@ bool SpiralProblemInterface::eval_f(int n, const double* x, bool new_x,
   return true;
 }
 
+// 定义目标函数的梯度，就是目标函数对于每一个优化变量的偏导数
 bool SpiralProblemInterface::eval_grad_f(int n, const double* x, bool new_x,
                                          double* grad_f) {
   CHECK_EQ(n, num_of_variables_);
   std::fill(grad_f, grad_f + n, 0.0);
-
+  // 和定义目标函数一样，梯度函数也需要首先更新螺旋曲线
   if (new_x) {
     update_piecewise_spiral_paths(x, n);
   }
@@ -374,11 +390,13 @@ bool SpiralProblemInterface::eval_grad_f(int n, const double* x, bool new_x,
   return true;
 }
 
+// 定义约束函数
+// 其中 x 为优化变量，g 为约束函数返回值
 bool SpiralProblemInterface::eval_g(int n, const double* x, bool new_x, int m,
                                     double* g) {
   CHECK_EQ(n, num_of_variables_);
   CHECK_EQ(m, num_of_constraints_);
-
+  // 和目标函数一样，对于新的优化变量，约束函数首先更新螺旋曲线
   if (new_x) {
     update_piecewise_spiral_paths(x, n);
   }
@@ -414,7 +432,11 @@ bool SpiralProblemInterface::eval_g(int n, const double* x, bool new_x, int m,
   }
   return true;
 }
-
+// 定义约束函数的 Jacobian 矩阵
+// 注：约束函数的雅可比矩阵是通过稀疏矩阵的形式构造的
+// 其中 iRow，jCol 分别表示雅克比矩阵非 0 项的行号和列号的数组
+// nele_jac 是雅克比矩阵非 0 项的个数
+// value 为雅克比矩阵非 0 项的值
 bool SpiralProblemInterface::eval_jac_g(int n, const double* x, bool new_x,
                                         int m, int nele_jac, int* iRow,
                                         int* jCol, double* values) {
@@ -649,7 +671,10 @@ bool SpiralProblemInterface::eval_jac_g(int n, const double* x, bool new_x,
   }
   return true;
 }
-
+// 定义 Hessian 矩阵
+// 这里由于设置了调用 ipopt 的拟牛顿法近似求解二阶偏导数，
+// 代码：app->Options()->SetStringValue("hessian_approximation","limited-memory");
+// 所以函数 eval_h() 这里无需实现
 bool SpiralProblemInterface::eval_h(int n, const double* x, bool new_x,
                                     double obj_factor, int m,
                                     const double* lambda, bool new_lambda,
@@ -658,7 +683,7 @@ bool SpiralProblemInterface::eval_h(int n, const double* x, bool new_x,
   ACHECK(false);
   return true;
 }
-
+// 获取优化结果并转存下来：
 void SpiralProblemInterface::finalize_solution(
     Ipopt::SolverReturn status, int n, const double* x, const double* z_L,
     const double* z_U, int m, const double* g, const double* lambda,

@@ -49,9 +49,11 @@ PiecewiseJerkSpeedNonlinearIpoptInterface::
       v_offset_(num_of_points),
       a_offset_(num_of_points * 2) {}
 
+// 定义问题的规模
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_nlp_info(
     int &n, int &m, int &nnz_jac_g, int &nnz_h_lag,
     IndexStyleEnum &index_style) {
+  // 定义了优化的变量的个数，每个点包含 3 个优化变量，s, s', s''
   num_of_variables_ = num_of_points_ * 3;
 
   if (use_soft_safety_bound_) {
@@ -65,7 +67,8 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_nlp_info(
 
   n = num_of_variables_;
 
-  // s monotone constraints s_i+1 - s_i >= 0.0
+  // s monotone constraints s_i+1 - s_i >= 0.0 
+  // s 的单调性约束 - s 是单调递增的
   num_of_constraints_ = num_of_points_ - 1;
 
   // jerk bound constraint
@@ -95,7 +98,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_nlp_info(
     // s_i - soft_upper_s_i - upper_slack_i <= 0.0
     num_of_constraints_ += num_of_points_;
   }
-
+  // 约束的个数
   m = num_of_constraints_;
 
   nnz_jac_g = 0;
@@ -134,8 +137,13 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_nlp_info(
   return true;
 }
 
+// 定义问题边界
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_bounds_info(
     int n, double *x_l, double *x_u, int m, double *g_l, double *g_u) {
+  // x_l，x_u 定义了优化变量的下边界和上边界
+  // g_l，g_u 定义了约束的下边界和上边界
+  // m 为约束的数量，n 为变量的数量
+
   // default nlp_lower_bound_inf value in Ipopt
   double INF = 1.0e19;
   double LARGE_VELOCITY_VALUE = s_dot_max_;
@@ -150,7 +158,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_bounds_info(
   }
 
   // s_dot
-  x_l[v_offset_] = s_dot_init_;
+  x_l[v_offset_] = s_dot_init_;  // v_offset_ = num_of_points
   x_u[v_offset_] = s_dot_init_;
   for (int i = 1; i < num_of_points_; ++i) {
     x_l[v_offset_ + i] = 0.0;
@@ -158,7 +166,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_bounds_info(
   }
 
   // s_ddot
-  x_l[a_offset_] = s_ddot_init_;
+  x_l[a_offset_] = s_ddot_init_;  // a_offset_ = num_of_points * 2
   x_u[a_offset_] = s_ddot_init_;
   for (int i = 1; i < num_of_points_; ++i) {
     x_l[a_offset_ + i] = s_ddot_min_;
@@ -287,7 +295,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_starting_point(
 
   return true;
 }
-
+// 定义目标函数
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_f(int n, const double *x,
                                                        bool new_x,
                                                        double &obj_value) {
@@ -345,7 +353,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_f(int n, const double *x,
 
   return true;
 }
-
+// 定义目标函数的梯度
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_grad_f(int n,
                                                             const double *x,
                                                             bool new_x,
@@ -416,7 +424,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_grad_f(int n,
 
   return true;
 }
-
+// 定义约束函数
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_g(int n, const double *x,
                                                        bool new_x, int m,
                                                        double *g) {
@@ -502,7 +510,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_g(int n, const double *x,
 
   return true;
 }
-
+// 定义约束函数的雅可比矩阵
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_jac_g(
     int n, const double *x, bool new_x, int m, int nele_jac, int *iRow,
     int *jCol, double *values) {
@@ -754,7 +762,7 @@ bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_jac_g(
   }
   return true;
 }
-
+// 定义目标函数的 Hessian 矩阵
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::eval_h(
     int n, const double *x, bool new_x, double obj_factor, int m,
     const double *lambda, bool new_lambda, int nele_hess, int *iRow, int *jCol,

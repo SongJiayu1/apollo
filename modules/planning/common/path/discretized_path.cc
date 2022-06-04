@@ -50,7 +50,8 @@ double DiscretizedPath::Length() const {
 }
 
 // 在离散的路径点之间正向线性插值得到给定 s 的点的信息，
-// 输入参数也是某个指定的纵向位置 path_s
+// 输入：某个指定的纵向位置 path_s
+// 输出：位置 path_s 处的 PathPoint
 PathPoint DiscretizedPath::Evaluate(const double path_s) const {
   // 检查是否非空
   ACHECK(!empty());
@@ -75,7 +76,7 @@ std::vector<PathPoint>::const_iterator DiscretizedPath::QueryLowerBound(
   auto func = [](const PathPoint &tp, const double path_s) {
     return tp.s() < path_s;
   };
-  // 正向遍历路径点，找到刚好小于 path_s 的第一个点
+  // 正向遍历路径点，返回大于等于 path_s 的第一个路径点的 const_iterator
   return std::lower_bound(begin(), end(), path_s, func);
 }
 // 在离散的路径点之间逆向线性插值得到给定 s 的点的信息，

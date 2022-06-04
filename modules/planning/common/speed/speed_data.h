@@ -28,6 +28,7 @@ namespace apollo {
 namespace planning {
 
 // SpeedData 类是继承基类 SpeedPoint 速度点的 vector 类，本质上是一个 vector 容器类
+// SpeedPoint 为 Protolbuf 数据类型，同时使用 std::sort() 按照时间 t 排序。
 class SpeedData : public std::vector<common::SpeedPoint> {
  public:
   SpeedData() = default; // 默认构造函数

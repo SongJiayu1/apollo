@@ -162,7 +162,8 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
       // 则 variables 有 12 个元素，每个元素是一个 vector<pair<int, float>>，表示一行
 
   int constraint_index = 0;
-  // set x, x', x'' bounds - 对 A 矩阵的 0-12 列进行赋值
+  // 1. x, x', x'' 约束
+  // set x, x', x'' bounds - 对 A 矩阵的 0-11 列进行赋值
   for (int i = 0; i < num_of_variables; ++i) { // variables[i] - 表示第 i 列
     if (i < n) { // i = 0, 1, 2, 3 - 对 A 矩阵的 0 - 3 列进行赋值，构造 x 约束
       variables[i].emplace_back(constraint_index, 1.0);
@@ -185,11 +186,14 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
     }
     ++constraint_index;
   }
+  // 上面的循环后，constraint_index = 12
   CHECK_EQ(constraint_index, num_of_variables);
-
+  
+  
+  // 2. x''' 的约束
   // x(i->i+1)''' = (x(i+1)'' - x(i)'') / delta_s - 构造 x''' 的约束
-  // 对 A 矩阵的第 8，9，10，11 列，第 12-15 行的元素赋值
-  for (int i = 0; i + 1 < n; ++i) {
+  // 对 A 矩阵的第 8，9，10，11 列，第 12-14 行的元素赋值
+  for (int i = 0; i + 1 < n; ++i) { // i = 0, 1, 2
     variables[2 * n + i].emplace_back(constraint_index, -1.0);
     variables[2 * n + i + 1].emplace_back(constraint_index, 1.0);
     lower_bounds->at(constraint_index) =
@@ -197,12 +201,17 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
     upper_bounds->at(constraint_index) =
         dddx_bound_.second * delta_s_ * scale_factor_[2];
     ++constraint_index;
-  }
-  // x'' -> x' 一阶导的连续性约束
+  } // 上面的循环后，constraint_index = 15
+  // 注：实际上 constraint_index 就是记录的元素在哪一行。
+
+  // 3 连续性约束
+  // 3.1  一阶导的连续性约束 x'' -> x'
   // x(i+1)' - x(i)' - 0.5 * delta_s * x(i)'' - 0.5 * delta_s * x(i+1)'' = 0
-  for (int i = 0; i + 1 < n; ++i) {
+  for (int i = 0; i + 1 < n; ++i) { // i = 0, 1, 2
+    // 第 4 列到第 7 列的元素
     variables[n + i].emplace_back(constraint_index, -1.0 * scale_factor_[2]);
     variables[n + i + 1].emplace_back(constraint_index, 1.0 * scale_factor_[2]);
+    // 第 8 列到第 11 列元素
     variables[2 * n + i].emplace_back(constraint_index,
                                       -0.5 * delta_s_ * scale_factor_[1]);
     variables[2 * n + i + 1].emplace_back(constraint_index,
@@ -210,18 +219,22 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
     lower_bounds->at(constraint_index) = 0.0;
     upper_bounds->at(constraint_index) = 0.0;
     ++constraint_index;
-  }
-  // x' -> x 零阶导的连续性约束
+  } // 上面的循环后，constraint_index = 18
+
+  // 3.2 零阶导的连续性约束 x' -> x 
   // x(i+1) - x(i) - delta_s * x(i)'
   // - 1/3 * delta_s^2 * x(i)'' - 1/6 * delta_s^2 * x(i+1)''
   auto delta_s_sq_ = delta_s_ * delta_s_;
-  for (int i = 0; i + 1 < n; ++i) {
+  for (int i = 0; i + 1 < n; ++i) { // i = 0, 1, 2
+    // 第 0 列到第 3 列元素
     variables[i].emplace_back(constraint_index,
                               -1.0 * scale_factor_[1] * scale_factor_[2]);
     variables[i + 1].emplace_back(constraint_index,
                                   1.0 * scale_factor_[1] * scale_factor_[2]);
+    // 第 4 列到第 7 列元素
     variables[n + i].emplace_back(
         constraint_index, -delta_s_ * scale_factor_[0] * scale_factor_[2]);
+    // 第 8 列到第 11 列元素
     variables[2 * n + i].emplace_back(
         constraint_index,
         -delta_s_sq_ / 3.0 * scale_factor_[0] * scale_factor_[1]);
@@ -232,26 +245,26 @@ void PiecewiseJerkProblem::CalculateAffineConstraint(
     lower_bounds->at(constraint_index) = 0.0;
     upper_bounds->at(constraint_index) = 0.0;
     ++constraint_index;
-  }
+  }  // 上面的循环后，constraint_index = 21
 
-  // constrain on x_init - 初始状态约束
-  variables[0].emplace_back(constraint_index, 1.0);
+  // 4. constrain on x_init - 初始状态约束
+  variables[0].emplace_back(constraint_index, 1.0); // 21 行
   lower_bounds->at(constraint_index) = x_init_[0] * scale_factor_[0];
   upper_bounds->at(constraint_index) = x_init_[0] * scale_factor_[0];
   ++constraint_index;
 
-  variables[n].emplace_back(constraint_index, 1.0);
+  variables[n].emplace_back(constraint_index, 1.0); // 22 行
   lower_bounds->at(constraint_index) = x_init_[1] * scale_factor_[1];
   upper_bounds->at(constraint_index) = x_init_[1] * scale_factor_[1];
   ++constraint_index;
 
-  variables[2 * n].emplace_back(constraint_index, 1.0);
+  variables[2 * n].emplace_back(constraint_index, 1.0); // 23 行
   lower_bounds->at(constraint_index) = x_init_[2] * scale_factor_[2];
   upper_bounds->at(constraint_index) = x_init_[2] * scale_factor_[2];
   ++constraint_index;
 
   CHECK_EQ(constraint_index, num_of_constraints);
-
+  // 此时，constraint_index = 24
   int ind_p = 0;
   for (int i = 0; i < num_of_variables; ++i) {
     A_indptr->push_back(ind_p);

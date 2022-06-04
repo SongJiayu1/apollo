@@ -470,9 +470,10 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   std::vector<std::pair<double, double>> ddx_bounds(num_of_knots,
                                                     {-max_acc, max_acc});
   // 初始化末状态
+  // 末状态的 s 一定为 path_length
   x_bounds[num_of_knots - 1] = std::make_pair(path_length, path_length);
-  dx_bounds[num_of_knots - 1] = std::make_pair(0.0, 0.0);
-  ddx_bounds[num_of_knots - 1] = std::make_pair(0.0, 0.0);
+  dx_bounds[num_of_knots - 1] = std::make_pair(0.0, 0.0); // 末状态的速度一定为 0.0
+  ddx_bounds[num_of_knots - 1] = std::make_pair(0.0, 0.0); // 末状态的加速度一定为 0.0
 
   // TODO(Jinyun): move to confs
   std::vector<double> x_ref(num_of_knots, path_length);
@@ -495,28 +496,30 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   const std::vector<double>& ds = piecewise_jerk_problem.opt_dx();
   const std::vector<double>& dds = piecewise_jerk_problem.opt_ddx();
 
-  // assign speed point by gear - 在 speed_data 末尾加入一个 SpeedPoint 点。
+  // assign speed point by gear - 构造一个起始状态的 SpeedPoint，然后加入 speed_data 这个容器中
   speed_data.AppendSpeedPoint(s[0], 0.0, ds[0], dds[0], 0.0);
   const double kEpislon = 1.0e-6;
   const double sEpislon = 1.0e-6;
   for (size_t i = 1; i < num_of_knots; ++i) {
-    if (s[i - 1] - s[i] > kEpislon) {
+    if (s[i - 1] - s[i] > kEpislon) { // 平滑后 s 不是单调递增的，跳出循环
       ADEBUG << "unexpected decreasing s in speed smoothing at time "
              << static_cast<double>(i) * delta_t << "with total time "
              << total_t;
       break;
     }
-    // 通过优化后的 s，ds，dds，构造新的 SpeedPoint，循环加入 speed_data 中。
+    // 通过优化后的 s，ds，dds，以及采样间隔 delta_t，构造新的 SpeedPoint，循环加入 speed_data 中。
     speed_data.AppendSpeedPoint(s[i], delta_t * static_cast<double>(i), ds[i],
                                 dds[i], (dds[i] - dds[i - 1]) / delta_t);
     // cut the speed data when it is about to meet end condition
     if (path_length - s[i] < sEpislon) {
       break;
     }
-  }
+  } // 注：此时得到的 speed_data 是为了下面的线性插值。
 
-  // 构造 path_data - path_data 包含 x, y, phi, s
+  // 根据平滑前的粗解，构造 path_data - path_data 包含 x, y, phi, s
   // speed_data 包含 s, t, v, a, jerk，所有可以将二者根据 s 值融合。
+  // 注：此时 speed_data 中的 SpeedPoint 是根据平滑后的 s 构造的，而 path_data 中
+  //    的 PathPoint 是根据平滑前的 s 构造的。
   DiscretizedPath path_data; // path_data 本质上是 vector<PathPoint>
   for (size_t i = 0; i < path_points_size; ++i) {
     common::PathPoint path_point;
@@ -526,8 +529,8 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
     path_point.set_s(result->accumulated_s[i]);
     path_data.push_back(std::move(path_point));
   }
-  
-  HybridAStartResult combined_result;
+  // 需要从 SpeedData 和 DiscretizedPath 中提取信息，然后赋给 combined_result 中对应的容器中。
+  HybridAStartResult combined_result; 
 
   // TODO(Jinyun): move to confs
   const double kDenseTimeResoltuion = 0.5;
@@ -540,6 +543,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
   
   for (double cur_rel_time = 0.0; cur_rel_time < time_horizon;
        cur_rel_time += kDenseTimeResoltuion) {
+    // 根据 cur_rel_time 在 speed_data 里面插值，得到新的 speed_point
     common::SpeedPoint speed_point;
     if (!speed_data.EvaluateByTime(cur_rel_time, &speed_point)) {
       AERROR << "Fail to get speed point with relative time " << cur_rel_time;
@@ -549,7 +553,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
     if (speed_point.s() > path_data.Length()) {
       break;
     }
-
+    // 根据 speed_point 的 s 值，在 path_data 中进行插值，得到对应 s 处的 path_point 实例。
     common::PathPoint path_point = path_data.Evaluate(speed_point.s());
     // combine speed and path profile
     combined_result.x.push_back(path_point.x());
@@ -565,7 +569,7 @@ bool HybridAStar::GenerateSCurveSpeedAcceleration(HybridAStartResult* result) {
     }
   }
 
-  combined_result.a.pop_back();
+  combined_result.a.pop_back(); // 这一句是为什么？
 
   // recalc step size
   path_points_size = combined_result.x.size();
@@ -593,7 +597,7 @@ bool HybridAStar::TrajectoryPartition(
     std::vector<HybridAStartResult>* partitioned_result) { // 这里传递的是一个左值，可以被赋值
 
   // 此时 result 已经是 起始节点 -> 目标节点 的信息
-  const auto& x = result.x;
+  const auto& x = result.x; // cost 左值引用，可以指向左值，也可以指向右值
   const auto& y = result.y;
   const auto& phi = result.phi;
   if (x.size() != y.size() || x.size() != phi.size()) {
@@ -605,6 +609,7 @@ bool HybridAStar::TrajectoryPartition(
   size_t horizon = x.size();
   partitioned_result->clear();
   partitioned_result->emplace_back(); // 调用 HybridAStartResult 的默认构造函数
+  // 放入一个空的 HybridAStartResult
 
   auto* current_traj = &(partitioned_result->back());
   // 根据档位变化进行轨迹切割
@@ -647,7 +652,7 @@ bool HybridAStar::TrajectoryPartition(
       current_traj = &(partitioned_result->back());
       current_gear = gear; // 更新档位状态
     }
-    // 这里对应把 B 节点加入新的轨迹段，作为新轨迹段的第一个节点
+    // 如果没有发生档位变化，依次将节点加入同一段 HybridAStarResult 中。
     current_traj->x.push_back(x[i]);
     current_traj->y.push_back(y[i]);
     current_traj->phi.push_back(phi[i]);

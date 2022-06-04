@@ -47,7 +47,10 @@ void PiecewiseJerkSpeedProblem::CalculateKernel(std::vector<c_float>* P_data,
                                                 std::vector<c_int>* P_indptr) {
   const int n = static_cast<int>(num_of_knots_);
   const int kNumParam = 3 * n;  // 待平滑的路径点的个数
-  const int kNumValue = 4 * n - 1;
+  const int kNumValue = 4 * n - 1; // P 矩阵中非零元素的个数
+  // 注：假设，有 4 个点需要平滑，那么 kNumParam = 12，说明要优化的变量有 12 个：
+  // x1, x2, x3, x4, x1', x2', x3', x4',...x4''
+  // 此时，P 矩阵中非零元素一共有 kNumValue 个，即 15 个。
   // P 矩阵的信息实际上存放在 coloumns 这个二维数组中，数组中的每个元素是一个 pair。
   // pair 的第一个元素是一个 index，第二个元素是存放的权重的值。
   std::vector<std::vector<std::pair<c_int, c_float>>> columns;

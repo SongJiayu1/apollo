@@ -52,6 +52,7 @@ SpeedData::SpeedData(std::vector<SpeedPoint> speed_points)
 void SpeedData::AppendSpeedPoint(const double s, const double time,
                                  const double v, const double a,
                                  const double da) {
+  // 使用了 std::mutex，UNIQUE_LOCK_MULTITHREAD 线程锁
   static std::mutex mutex_speedpoint;
   UNIQUE_LOCK_MULTITHREAD(mutex_speedpoint);
 
@@ -61,6 +62,7 @@ void SpeedData::AppendSpeedPoint(const double s, const double time,
   push_back(common::util::PointFactory::ToSpeedPoint(s, time, v, a, da));
 }
 
+// 通过 对应的时间 t， 查找速度信息（线性插值）
 // Evaluate 通常指插值，用时间去速度规划数组 SpeedData 类对象里插值出 s, v, a, da
 // 插值结果存放到函数输入的最后一个参数 speed_point 里
 bool SpeedData::EvaluateByTime(const double t,
@@ -68,6 +70,8 @@ bool SpeedData::EvaluateByTime(const double t,
   if (size() < 2) {
     return false;
   }
+  // 这里要 t 在 front().t() 和 back().t() 之间
+  // 注：这里的 1.0e-6 是为了消除浮点型数据运算的误差。
   if (!(front().t() < t + 1.0e-6 && t - 1.0e-6 < back().t())) {
     return false;
   }
@@ -75,20 +79,22 @@ bool SpeedData::EvaluateByTime(const double t,
   auto comp = [](const common::SpeedPoint& sp, const double t) {
     return sp.t() < t;
   };
-
+  // 返回大于等于 t 的第一个 SpeedPoint（这里实际上是返回第一个不符合 comp 规则的元素）
   auto it_lower = std::lower_bound(begin(), end(), t, comp);
   if (it_lower == end()) {
     *speed_point = back();
   } else if (it_lower == begin()) {
     *speed_point = front();
   } else {
-    const auto& p0 = *(it_lower - 1);
-    const auto& p1 = *it_lower;
+    const auto& p0 = *(it_lower - 1); // 
+    const auto& p1 = *it_lower; // 第一个大于 t 的 SpeedPoint 的迭代器为 it_lower
     double t0 = p0.t();
     double t1 = p1.t();
-
-    speed_point->Clear();
-    speed_point->set_s(common::math::lerp(p0.s(), t0, p1.s(), t1, t));
+    
+    speed_point->Clear(); 
+    speed_point->set_s(common::math::lerp(p0.s(), t0, p1.s(), t1, t)); // 线性插值
+    // 注：这里的 lerp 是一个函数模板，可以自动类型推导（类模板必须显示的指定类型）。
+    // 注：这里的 set_xxx 函数，是 protobuf 的默认访问方式。
     speed_point->set_t(t);
     if (p0.has_v() && p1.has_v()) {
       speed_point->set_v(common::math::lerp(p0.v(), t0, p1.v(), t1, t));
