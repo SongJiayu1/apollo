@@ -46,7 +46,7 @@ class CubicPolynomialCurve1d : public PolynomialCurve1d {
                          const double x1, const double param);
 
   void DerivedFromQuarticCurve(const PolynomialCurve1d& other);
-
+  // 对三次多项式取 order 次导数，然后计算自变量为 p 时多项式曲线的函数值
   double Evaluate(const std::uint32_t order, const double p) const override;
 
   double ParamLength() const override { return param_; }

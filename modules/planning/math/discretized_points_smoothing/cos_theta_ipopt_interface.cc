@@ -45,7 +45,9 @@ bool CosThetaIpoptInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
                                           int& nnz_h_lag,
                                           IndexStyleEnum& index_style) {
   // number of variables
-  n = static_cast<int>(num_of_points_ << 1);
+  n = static_cast<int>(num_of_points_ << 1); // 左移运算符
+  // 即将 num_of_points_ 的二进制数左移一位，相当于乘以二，得到的数赋给 n。
+  // 假设有 3 个点的话，n = 6，即有 6 个变量(x1, y1, x2, y2, x3, y3)
   num_of_variables_ = n;
 
   // number of constraints
@@ -122,6 +124,7 @@ bool CosThetaIpoptInterface::get_starting_point(int n, bool init_x, double* x,
   std::random_device rd;
   std::default_random_engine gen = std::default_random_engine(rd());
   std::normal_distribution<> dis{0, 0.05};
+  // 在原始参考点基础上添加随机数初始化点 - 这一步是为什么？？？
   for (size_t i = 0; i < num_of_points_; ++i) {
     size_t index = i << 1;
     x[index] = ref_points_[i].first + dis(gen);
@@ -137,7 +140,7 @@ bool CosThetaIpoptInterface::eval_f(int n, const double* x, bool new_x,
     eval_obj(n, x, &obj_value);
     return true;
   }
-
+  // 代价函数 - cost3 部分，与参考点 ref_points_ 之间的距离代价
   obj_value = 0.0;
   for (size_t i = 0; i < num_of_points_; ++i) {
     size_t index = i << 1;
@@ -146,6 +149,7 @@ bool CosThetaIpoptInterface::eval_f(int n, const double* x, bool new_x,
         (x[index + 1] - ref_points_[i].second) *
             (x[index + 1] - ref_points_[i].second);
   }
+  // 代价函数 - cost1 部分，平滑性代价
   for (size_t i = 0; i < num_of_points_ - 2; i++) {
     size_t findex = i << 1;
     size_t mindex = findex + 2;
@@ -163,13 +167,13 @@ bool CosThetaIpoptInterface::eval_f(int n, const double* x, bool new_x,
   }
   return true;
 }
-
+// 求目标函数的偏导数
 bool CosThetaIpoptInterface::eval_grad_f(int n, const double* x, bool new_x,
                                          double* grad_f) {
   CHECK_EQ(static_cast<size_t>(n), num_of_variables_);
 
   if (use_automatic_differentiation_) {
-    gradient(tag_f, n, x, grad_f);
+    gradient(tag_f, n, x, grad_f); // 调用 adol-c 中的 gradient 方法，求目标函数的偏导数
     return true;
   }
 
@@ -228,7 +232,7 @@ bool CosThetaIpoptInterface::eval_grad_f(int n, const double* x, bool new_x,
   }
   return true;
 }
-
+// 定义约束函数 
 bool CosThetaIpoptInterface::eval_g(int n, const double* x, bool new_x, int m,
                                     double* g) {
   CHECK_EQ(static_cast<size_t>(n), num_of_variables_);
@@ -246,7 +250,7 @@ bool CosThetaIpoptInterface::eval_g(int n, const double* x, bool new_x, int m,
   }
   return true;
 }
-
+// 求约束函数的 Jacobian
 bool CosThetaIpoptInterface::eval_jac_g(int n, const double* x, bool new_x,
                                         int m, int nele_jac, int* iRow,
                                         int* jCol, double* values) {
@@ -266,7 +270,8 @@ bool CosThetaIpoptInterface::eval_jac_g(int n, const double* x, bool new_x,
       // auto* cind_g = &cind_g_[0];
       // auto* jacval = &jacval_[0];
       sparse_jac(tag_g, m, n, 1, x, &nnz_jac_, &rind_g_, &cind_g_, &jacval_,
-                 options_g_);
+                 options_g_); // 此处调用了 adol-c 中求解函数 tag_g 的雅可比矩阵的方法。
+      // 注：tag_g 和约束函数绑定，是在 generate_tapes 函数中定义的。
       for (int idx = 0; idx < nnz_jac_; idx++) {
         values[idx] = jacval_[idx];
       }
@@ -289,7 +294,7 @@ bool CosThetaIpoptInterface::eval_jac_g(int n, const double* x, bool new_x,
   }
   return true;
 }
-
+// 求拉格朗日函数的 Hessian 矩阵
 bool CosThetaIpoptInterface::eval_h(int n, const double* x, bool new_x,
                                     double obj_factor, int m,
                                     const double* lambda, bool new_lambda,
@@ -313,10 +318,10 @@ bool CosThetaIpoptInterface::eval_h(int n, const double* x, bool new_x,
       // auto* rind_L = &rind_L_[0];
       // auto* cind_L = &cind_L_[0];
       // auto* hessval = &hessval_[0];
-      set_param_vec(tag_L, m + 1, &obj_lam_[0]);
+      set_param_vec(tag_L, m + 1, &obj_lam_[0]); // 更新拉格朗日函数的参数
       sparse_hess(tag_L, n, 1, const_cast<double*>(x), &nnz_L_, &rind_L_,
                   &cind_L_, &hessval_, options_L_);
-
+      // 调用 adol-c 中的 sparse_hess 函数求拉格朗日函数的 Hessian 矩阵。
       for (int idx = 0; idx < nnz_L_; idx++) {
         values[idx] = hessval_[idx];
       }
@@ -640,8 +645,8 @@ template <class T>
 bool CosThetaIpoptInterface::eval_constraints(int n, const T* x, int m, T* g) {
   // fill in the positional deviation constraints
   for (size_t i = 0; i < num_of_points_; ++i) {
-    size_t index = i << 1;
-    g[index] = x[index];
+    size_t index = i << 1; // index = i * 2
+    g[index] = x[index]; 
     g[index + 1] = x[index + 1];
   }
   return true;
@@ -667,7 +672,7 @@ void CosThetaIpoptInterface::generate_tapes(int n, int m, int* nnz_jac_g,
   get_starting_point(n, 1, &xp[0], 0, &zl[0], &zu[0], m, 0, &lamp[0]);
 
   // Trace on Objectives
-  trace_on(tag_f);
+  trace_on(tag_f); // 标记活动段落 - 目标函数
   for (int idx = 0; idx < n; idx++) {
     xa[idx] <<= xp[idx];
   }
@@ -676,7 +681,7 @@ void CosThetaIpoptInterface::generate_tapes(int n, int m, int* nnz_jac_g,
   trace_off();
 
   // Trace on Jacobian
-  trace_on(tag_g);
+  trace_on(tag_g); // 标记活动段落 - 约束函数的 Jacobian 矩阵
   for (int idx = 0; idx < n; idx++) {
     xa[idx] <<= xp[idx];
   }
@@ -687,7 +692,7 @@ void CosThetaIpoptInterface::generate_tapes(int n, int m, int* nnz_jac_g,
   trace_off();
 
   // Trace on Hessian
-  trace_on(tag_L);
+  trace_on(tag_L); // 标记活动段落 - 拉格朗日函数的海森矩阵
   for (int idx = 0; idx < n; idx++) {
     xa[idx] <<= xp[idx];
   }

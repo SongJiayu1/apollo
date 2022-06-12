@@ -246,7 +246,7 @@ bool SpiralReferenceLineSmoother::Smooth(std::vector<Eigen::Vector2d> point2d,
   // 构造一个新的求解器实例
   SpiralProblemInterface* ptop = new SpiralProblemInterface(point2d);
   // 设置平滑点距离锚点的最大偏移距离
-  ptop->set_default_max_point_deviation(config_.spiral().max_deviation());
+  ptop->set_default_max_point_deviation(config_.spiral().max_deviation()); // 0.05
   // 设置起始点参数，Apollo 中起始点位置不能被平滑，因此均设置为固定点。
   if (fixed_start_point_) {
     ptop->set_start_point(fixed_start_x_, fixed_start_y_, fixed_start_theta_,
@@ -254,31 +254,40 @@ bool SpiralReferenceLineSmoother::Smooth(std::vector<Eigen::Vector2d> point2d,
   }
   // 设置终止点参数
   ptop->set_end_point_position(fixed_end_x_, fixed_end_y_);
-  
-  ptop->set_element_weight_curve_length(config_.spiral().weight_curve_length());
-  ptop->set_element_weight_kappa(config_.spiral().weight_kappa());
-  ptop->set_element_weight_dkappa(config_.spiral().weight_dkappa());
-
-  Ipopt::SmartPtr<Ipopt::TNLP> problem = ptop;
+  // 设置曲线弧长权重
+  ptop->set_element_weight_curve_length(config_.spiral().weight_curve_length()); // 1.0
+  // 设置曲率权重
+  ptop->set_element_weight_kappa(config_.spiral().weight_kappa()); // 1.0
+  // 设置曲率变化率权重
+  ptop->set_element_weight_dkappa(config_.spiral().weight_dkappa()); // 100.0
+  // config_ 的路径：apollo\modules\planning\conf\spiral_smoother_config.pb.txt
+  // 创建一个 Ipopt::TNLP 的求解器指针
+  Ipopt::SmartPtr<Ipopt::TNLP> problem = ptop; 
+  // ptop 是一个类型为 SpiralProblemInterface 的指针，而这个类继承自 Ipopt::TNLP
 
   // Create an instance of the IpoptApplication
   Ipopt::SmartPtr<Ipopt::IpoptApplication> app = IpoptApplicationFactory();
-
+  // 设置求解器参数
+  // 通过拟牛顿法近似 Hessian 矩阵
   app->Options()->SetStringValue("hessian_approximation", "limited-memory");
   app->Options()->SetIntegerValue("print_level", 0);
-  app->Options()->SetIntegerValue("max_iter", config_.spiral().max_iteration());
+  // 设置最大迭代次数，达到迭代次数后，算法停止优化
+  app->Options()->SetIntegerValue("max_iter", config_.spiral().max_iteration()); // 500
+  // 可接受的迭代次数：当算法没有达到收敛误差 tol，但是达到可接受的收敛误差
+  // acceptable_tol，在 acceptable_iter 次数以后，算法也会成功退出
   app->Options()->SetIntegerValue("acceptable_iter",
-                                  config_.spiral().opt_acceptable_iteration());
-  app->Options()->SetNumericValue("tol", config_.spiral().opt_tol());
+                                  config_.spiral().opt_acceptable_iteration()); // 15
+  // 收敛误差，满足该误差下算法即停止优化，返回成功求解
+  app->Options()->SetNumericValue("tol", config_.spiral().opt_tol()); // 1.0e-6
   app->Options()->SetNumericValue("acceptable_tol",
-                                  config_.spiral().opt_acceptable_tol());
-
+                                  config_.spiral().opt_acceptable_tol()); // 1e-4
+  // 初始化求解器参数
   Ipopt::ApplicationReturnStatus status = app->Initialize();
   if (status != Ipopt::Solve_Succeeded) {
     ADEBUG << "*** Error during initialization!";
     return false;
   }
-
+  // 优化
   status = app->OptimizeTNLP(problem);
 
   if (status == Ipopt::Solve_Succeeded ||

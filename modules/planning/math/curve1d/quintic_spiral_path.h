@@ -45,7 +45,7 @@ class QuinticSpiralPath : public QuinticPolynomialCurve1d {
                     const double dkappa0, const double theta1,
                     const double kappa1, const double dkappa1,
                     const double delta_s);
-
+  // 已知螺旋曲线上的 s 值，求笛卡尔坐标系下的 x 坐标
   template <size_t N>
   double ComputeCartesianDeviationX(const double s) const {
     auto cos_theta = [this](const double s) {
@@ -54,7 +54,7 @@ class QuinticSpiralPath : public QuinticPolynomialCurve1d {
     };
     return common::math::IntegrateByGaussLegendre<N>(cos_theta, 0.0, s);
   }
-
+  // 已知螺旋曲线上的 s 值，求笛卡尔坐标系下的 y 坐标
   template <size_t N>
   double ComputeCartesianDeviationY(const double s) const {
     auto sin_theta = [this](const double s) {
@@ -117,7 +117,7 @@ class QuinticSpiralPath : public QuinticPolynomialCurve1d {
  private:
   double DeriveTheta(const size_t param_index,
                      const double delta_s_ratio) const;
-
+  // 螺旋曲线的偏导数矩阵
   std::array<std::array<double, 7>, 6> coef_deriv_;
 };
 

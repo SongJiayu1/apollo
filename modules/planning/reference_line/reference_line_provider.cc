@@ -850,16 +850,21 @@ void ReferenceLineProvider::GetAnchorPoints(
     const ReferenceLine &reference_line,
     std::vector<AnchorPoint> *anchor_points) const {
   CHECK_NOTNULL(anchor_points);
+  // anchor point 的采样间隔
   const double interval = smoother_config_.max_constraint_interval();
+  // QPSpline: 5.0; Spiral: 5.0; Discrete Points: 0.25
   int num_of_anchors =
       std::max(2, static_cast<int>(reference_line.Length() / interval + 0.5));
   std::vector<double> anchor_s;
+  // 把 reference_line 进行分段，从而得到每个锚点的 s 值
   common::util::uniform_slice(0.0, reference_line.Length(), num_of_anchors - 1,
                               &anchor_s);
   for (const double s : anchor_s) {
+    // 在 reference_line 上位移为 s 的位置采样一个点作为 anchor point
     AnchorPoint anchor = GetAnchorPoint(reference_line, s);
     anchor_points->emplace_back(anchor);
   }
+  // 整条参考线的起始点和最后一个点的位置约束为强约束，就是横纵向的 bound 都很小（1e-6）
   anchor_points->front().longitudinal_bound = 1e-6;
   anchor_points->front().lateral_bound = 1e-6;
   anchor_points->front().enforced = true;
@@ -924,7 +929,7 @@ bool ReferenceLineProvider::SmoothReferenceLine(
   }
   // generate anchor points:
   std::vector<AnchorPoint> anchor_points;
-  GetAnchorPoints(raw_reference_line, &anchor_points);
+  GetAnchorPoints(raw_reference_line, &anchor_points);  // 生成锚点
   smoother_->SetAnchorPoints(anchor_points);
   if (!smoother_->Smooth(raw_reference_line, reference_line)) {
     AERROR << "Failed to smooth reference line with anchor points";

@@ -133,9 +133,10 @@ void FemPosDeviationOsqpInterface::CalculateKernel(
 
   // Three quadratic penalties are involved:
   // 1. Penalty x on distance between middle point and point by finite element
-  // estimate;
-  // 2. Penalty y on path length;
-  // 3. Penalty z on difference between points and reference points
+  // estimate; - X 是关于平滑度的 cost 的权重项
+  // 2. Penalty y on path length; - Y 是关于路径长度的 cost 的权重项
+  // 3. Penalty z on difference between points and reference points 
+  // - Z 是关于与参考点偏差的 cost 的权重项
 
   // General formulation of P matrix is as below(with 6 points as an example):
   // I is a two by two identity matrix, X, Y, Z represents x * I, y * I, z * I

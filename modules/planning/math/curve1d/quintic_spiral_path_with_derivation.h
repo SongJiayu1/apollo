@@ -59,10 +59,10 @@ class QuinticSpiralPathWithDerivation : public QuinticPolynomialCurve1d {
 
   double DeriveDKappaDerivative(const size_t param_index, const int i,
                                 const int n);
-
-  static const size_t THETA0 = 0;
-  static const size_t KAPPA0 = 1;
-  static const size_t DKAPPA0 = 2;
+  // 求偏导的变量
+  static const size_t THETA0 = 0; // 对起点的 theta 求偏导
+  static const size_t KAPPA0 = 1; // 对起点的 kappa 求偏导
+  static const size_t DKAPPA0 = 2; // 对起点的 dkappa 求偏导
   static const size_t THETA1 = 3;
   static const size_t KAPPA1 = 4;
   static const size_t DKAPPA1 = 5;

@@ -53,7 +53,7 @@ bool DiscretePointsReferenceLineSmoother::Smooth(
   NormalizePoints(&raw_point2d);
 
   bool status = false;
-
+  // 从配置文件中选择使用 CosThetaSmooth 还是 FemPosSmooth
   const auto& smoothing_method = config_.discrete_points().smoothing_method();
   std::vector<std::pair<double, double>> smoothed_point2d;
   switch (smoothing_method) {

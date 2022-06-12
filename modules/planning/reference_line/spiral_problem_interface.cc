@@ -90,16 +90,16 @@ bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
                                           int& nnz_h_lag,
                                           IndexStyleEnum& index_style) {
   // number of variables
-  // n定义了变量个数，由于每个点包含了 5 个优化变量和 1 个两点之间弧长的变量，所以：
+  // n 定义了变量个数，由于每个点包含了 5 个优化变量和 1 个两点之间弧长的变量，所以：
   n = num_of_points_ * 5 + num_of_points_ - 1;
   num_of_variables_ = n;
 
   // number of constraints
-  // m 定义了约束的数量，除起始点外，每个点包含 x，y 的两个约束和每个点的位置平移约束
-  // b. positional equality constraints;
+  // m 定义了约束的数量，除起始点外，每个点包含 x，y 的等式约束和每个点的位置平移约束
+  // b. positional equality constraints; - 位置的等式约束
   // totally 2 * (num_of_points - 1) considering x and y separately
   m = (num_of_points_ - 1) * 2;  // x，y 的约束，不包括第一个点
-  // a. positional movements; totally num_of_points
+  // a. positional movements; totally num_of_points - 位置平移约束
   m += num_of_points_;  // 位置平移约束
   num_of_constraints_ = m;
 
@@ -112,7 +112,7 @@ bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
   index_style = IndexStyleEnum::C_STYLE;
   return true;
 }
-// 定义问题的变量的上下边界和约束的上下边界
+// 定义优化变量的上下边界和约束的上下边界
 bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
                                              int m, double* g_l, double* g_u) {
   // x_l，x_u 定义了优化变量的下边界和上边界
@@ -121,8 +121,8 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
   CHECK_EQ(n, num_of_variables_);
   CHECK_EQ(m, num_of_constraints_);
 
-  // variables
-  // a. for theta, kappa, dkappa, x, y
+  // variables - 定义优化变量的上下边界
+  // a. for theta, kappa, dkappa, x, y 
   for (int i = 0; i < num_of_points_; ++i) {
     int index = i * 5;
 
@@ -177,10 +177,10 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
       // 对于中间点的约束
       theta_lower = relative_theta_[i] - M_PI * 0.2;
       theta_upper = relative_theta_[i] + M_PI * 0.2;
-      kappa_lower = -0.25;
-      kappa_upper = 0.25;
-      dkappa_lower = -0.02;
-      dkappa_upper = 0.02;
+      kappa_lower = -0.25; // 曲率的下边界
+      kappa_upper = 0.25;  // 曲率的上边界
+      dkappa_lower = -0.02; // 曲率变化率的下边界
+      dkappa_upper = 0.02;  // 曲率变化率的上边界
       x_lower = init_points_[i].x() - default_max_point_deviation_;
       x_upper = init_points_[i].x() + default_max_point_deviation_;
       y_lower = init_points_[i].y() - default_max_point_deviation_;
@@ -216,8 +216,8 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
     x_u[variable_offset + i] = point_distances_[i] * M_PI * 0.5;
   }
 
-  // constraints
-  // a. positional equality constraints
+  // constraints - 定义约束的上下边界
+  // a. positional equality constraints - 位置的等式约束，其上下边界都为 0.0
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     // for x
     g_l[i * 2] = 0.0;
@@ -247,7 +247,7 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
   ACHECK(init_x);
   ACHECK(!init_z);
   ACHECK(!init_lambda);
-
+  // 给每个点的 theta，曲率，曲率变化率，以及 x, y 坐标赋初值
   for (int i = 0; i < num_of_points_; ++i) {
     int index = i * 5;
     x[index] = relative_theta_[i];
@@ -256,13 +256,13 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
     x[index + 3] = init_points_[i].x();
     x[index + 4] = init_points_[i].y();
   }
-
+  // 求中间点的弧长
   int variable_offset = num_of_points_ * 5;
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     double delta_theta = relative_theta_[i + 1] - relative_theta_[i];
     x[variable_offset + i] = point_distances_[i] / std::cos(0.5 * delta_theta);
   }
-
+  // 由上面计算得到的弧长，求中间点的曲率：角度变化 / 弧长
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     double delta_theta = relative_theta_[i + 1] - relative_theta_[i];
     x[(i + 1) * 5 + 1] = delta_theta / x[variable_offset + i];
@@ -278,21 +278,23 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
 }
 
 // 定义目标函数
-// 主：参数中 new_x 会反馈出求解器是否更新了优化变量，如果更新了优化变量，
-// 我们就要重新更新螺旋曲线函数，利用新的优化变量构造螺旋曲线
 bool SpiralProblemInterface::eval_f(int n, const double* x, bool new_x,
                                     double& obj_value) {
   CHECK_EQ(n, num_of_variables_);
   if (new_x) {
     update_piecewise_spiral_paths(x, n);
-  }
+  } 
+  // 注：参数中 new_x 会反馈出求解器是否更新了优化变量，如果更新了优化变量，
+  // 我们就要重新更新螺旋曲线函数，利用新的优化变量构造螺旋曲线
+  // 新构造的螺旋曲线放在 piecewise_paths_ 这个容器中，里面每个元素都是 QuinticSpiralPathWithDerivation<N>
 
   obj_value = 0.0;
+  // 这个 num_of_points_ 实际上就是 anchor points 的个数
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     const auto& spiral_curve = piecewise_paths_[i];
-    double delta_s = spiral_curve.ParamLength();
+    double delta_s = spiral_curve.ParamLength(); // 第 i 段螺旋曲线的弧长
 
-    obj_value += delta_s * weight_curve_length_;
+    obj_value += delta_s * weight_curve_length_; // 第 i 段曲线的长度 cost
     // 这里对每两个节点之间又均分出了 5 个内部节点，分别将内部节点的曲率和
     // 曲率变化率加权求和
     for (int j = 0; j < num_of_internal_points_; ++j) {
@@ -328,63 +330,64 @@ bool SpiralProblemInterface::eval_grad_f(int n, const double* x, bool new_x,
 
     auto& spiral_curve = piecewise_paths_[i];
     double delta_s = spiral_curve.ParamLength();
-
-    grad_f[variable_offset + i] += weight_curve_length_ * 1.0;
+    // 目标函数对 delta_s_i 求偏导 - 第一项，length 部分
+    grad_f[variable_offset + i] += weight_curve_length_ * 1.0; 
 
     for (int j = 0; j < num_of_internal_points_; ++j) {
       double ratio =
           static_cast<double>(j) / static_cast<double>(num_of_internal_points_);
       double s = ratio * delta_s;
-
+      // theta_i 是第 i-1 条曲线的 THETA1 和第 i 条曲线的 THETA0
       double kappa = spiral_curve.Evaluate(1, s);
+      // 第 i 条螺旋曲线 - 起始点
       grad_f[index0] += weight_kappa_ * 2.0 * kappa *
                         spiral_curve.DeriveKappaDerivative(
-                            THETA0, j, num_of_internal_points_);
+                            THETA0, j, num_of_internal_points_); // 对 theta_i 求偏导 (1)
       grad_f[index0 + 1] += weight_kappa_ * 2.0 * kappa *
                             spiral_curve.DeriveKappaDerivative(
-                                KAPPA0, j, num_of_internal_points_);
+                                KAPPA0, j, num_of_internal_points_); // 对 theta_i' 求偏导
       grad_f[index0 + 2] += weight_kappa_ * 2.0 * kappa *
                             spiral_curve.DeriveKappaDerivative(
-                                DKAPPA0, j, num_of_internal_points_);
-
+                                DKAPPA0, j, num_of_internal_points_); // 对 theta_i'' 求偏导
+      // 第 i 条螺旋曲线 - 终止点 -
       grad_f[index1] += weight_kappa_ * 2.0 * kappa *
                         spiral_curve.DeriveKappaDerivative(
-                            THETA1, j, num_of_internal_points_);
+                            THETA1, j, num_of_internal_points_); 
       grad_f[index1 + 1] += weight_kappa_ * 2.0 * kappa *
                             spiral_curve.DeriveKappaDerivative(
                                 KAPPA1, j, num_of_internal_points_);
       grad_f[index1 + 2] += weight_kappa_ * 2.0 * kappa *
                             spiral_curve.DeriveKappaDerivative(
                                 DKAPPA1, j, num_of_internal_points_);
-
+      // 第 i 条螺旋曲线 - 对 delta_s_i 求偏导 - 第二项，kappa 部分
       grad_f[variable_offset + i] += weight_kappa_ * 2.0 * kappa *
                                      spiral_curve.DeriveKappaDerivative(
-                                         DELTA_S, j, num_of_internal_points_);
-
+                                         DELTA_S, j, num_of_internal_points_); 
+      // 第 i 条螺旋曲线 - 起始点 - 二阶导项
       double dkappa = spiral_curve.Evaluate(2, s);
       grad_f[index0] += weight_dkappa_ * 2.0 * dkappa *
                         spiral_curve.DeriveDKappaDerivative(
-                            THETA0, j, num_of_internal_points_);
+                            THETA0, j, num_of_internal_points_);  // (2)
       grad_f[index0 + 1] += weight_dkappa_ * 2.0 * dkappa *
                             spiral_curve.DeriveDKappaDerivative(
                                 KAPPA0, j, num_of_internal_points_);
-      grad_f[index0 + 2] += weight_dkappa_ * 2.0 * dkappa *
+      grad_f[index0 + 2] += weight_dkappa_ * 2.0 * dkappa * 
                             spiral_curve.DeriveDKappaDerivative(
                                 DKAPPA0, j, num_of_internal_points_);
-
+      // 第 i 条螺旋曲线 - 终止点 - 二阶导项
       grad_f[index1] += weight_dkappa_ * 2.0 * dkappa *
                         spiral_curve.DeriveDKappaDerivative(
-                            THETA1, j, num_of_internal_points_);
+                            THETA1, j, num_of_internal_points_);  
       grad_f[index1 + 1] += weight_dkappa_ * 2.0 * dkappa *
                             spiral_curve.DeriveDKappaDerivative(
                                 KAPPA1, j, num_of_internal_points_);
       grad_f[index1 + 2] += weight_dkappa_ * 2.0 * dkappa *
                             spiral_curve.DeriveDKappaDerivative(
                                 DKAPPA1, j, num_of_internal_points_);
-
+      // 第 i 条螺旋曲线 - 对 delta_s_i 求偏导 - 第三项，dkappa 部分
       grad_f[variable_offset + i] += weight_dkappa_ * 2.0 * dkappa *
                                      spiral_curve.DeriveDKappaDerivative(
-                                         DELTA_S, j, num_of_internal_points_);
+                                         DELTA_S, j, num_of_internal_points_); 
     }
   }
   return true;
@@ -400,7 +403,8 @@ bool SpiralProblemInterface::eval_g(int n, const double* x, bool new_x, int m,
   if (new_x) {
     update_piecewise_spiral_paths(x, n);
   }
-
+  
+  // 位置连续性约束（第 i 和 i+1 个点的 x, y 坐标需要相等）
   // first, fill in the positional equality constraints
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     int index0 = i * 5;
@@ -408,7 +412,8 @@ bool SpiralProblemInterface::eval_g(int n, const double* x, bool new_x, int m,
 
     const auto& spiral_curve = piecewise_paths_[i];
     double delta_s = spiral_curve.ParamLength();
-
+    // 自变量的顺序是 theta, theta', theta'', x, y；
+    // 所以 index0+3 正好是第 i 个点的 x 值，index1+3 是第 i+1 个点的 x 值
     double x_diff = x[index1 + 3] - x[index0 + 3] -
                     spiral_curve.ComputeCartesianDeviationX(delta_s);
     g[i * 2] = x_diff * x_diff;
@@ -417,16 +422,16 @@ bool SpiralProblemInterface::eval_g(int n, const double* x, bool new_x, int m,
                     spiral_curve.ComputeCartesianDeviationY(delta_s);
     g[i * 2 + 1] = y_diff * y_diff;
   }
-
+  // 位置偏移约束
   // second, fill in the positional deviation constraints
   int constraint_offset = 2 * (num_of_points_ - 1);
   for (int i = 0; i < num_of_points_; ++i) {
     int variable_index = i * 5;
-    double x_cor = x[variable_index + 3];
-    double y_cor = x[variable_index + 4];
+    double x_cor = x[variable_index + 3];  // xi
+    double y_cor = x[variable_index + 4];  // yi
 
-    double x_diff = x_cor - init_points_[i].x();
-    double y_diff = y_cor - init_points_[i].y();
+    double x_diff = x_cor - init_points_[i].x(); // 和第 i 个点的初始 x 坐标做差
+    double y_diff = y_cor - init_points_[i].y(); // 和第 i 个点的初始 y 坐标做差
 
     g[constraint_offset + i] = x_diff * x_diff + y_diff * y_diff;
   }
@@ -719,7 +724,16 @@ void SpiralProblemInterface::update_piecewise_spiral_paths(const double* x,
 
     std::array<double, 3> x0 = {x[index0], x[index0 + 1], x[index0 + 2]};
     std::array<double, 3> x1 = {x[index1], x[index1 + 1], x[index1 + 2]};
-    double delta_s = x[variable_offset + i];
+    // x0 - 第 i 段螺旋曲线的起始 theta, theta_dot, theta_dot_dot
+    // x1 - 第 i+1 段螺旋曲线的起始 theta, theta_dot, theta_dot_dot
+    double delta_s = x[variable_offset + i]; // 取出每一段螺旋曲线的 delta_s
+    // 这里就体现出 x 中优化变量的顺序：
+    // theta0, theta_dot0, theta_dotdot0, x0, y0 - 第一段螺旋曲线的优化变量（不包括 delta_s）
+    // theta1, theta_dot1, theta_dotdot1, x1, y1 - 第二段螺旋曲线的优化变量
+    // theta2, theta_dot2, theta_dotdot2, x2, y2 - 第二段螺旋曲线的优化变量
+    // delta_s0 - 第一段螺旋曲线的 delta_s
+    // delta_s1 - 第二段螺旋曲线的 delta_s
+    // delta_s2 - 第三段螺旋曲线的 delta_s
     piecewise_paths_[i] =
         std::move(QuinticSpiralPathWithDerivation<N>(x0, x1, delta_s));
   }

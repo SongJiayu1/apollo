@@ -82,11 +82,13 @@ void CubicPolynomialCurve1d::ComputeCoefficients(const double x0,
                                                  const double ddx0,
                                                  const double x1,
                                                  const double param) {
+  // f(x) = coef_[0] + coef_[1] * x + coef_[2] * x^2 + coeff_[3] * x^3
+  // param - 样条曲线终点处的 x 值
   DCHECK(param > 0.0);
   const double p2 = param * param;
   const double p3 = param * p2;
-  coef_[0] = x0;
-  coef_[1] = dx0;
+  coef_[0] = x0; 
+  coef_[1] = dx0; 
   coef_[2] = 0.5 * ddx0;
   coef_[3] = (x1 - x0 - dx0 * param - coef_[2] * p2) / p3;
 }

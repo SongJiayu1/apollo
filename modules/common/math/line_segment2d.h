@@ -67,7 +67,7 @@ class LineSegment2d {
    * @brief Get the unit direction from the start point to the end point.
    * @return The start point of the line segment.
    */
-  const Vec2d &unit_direction() const { return unit_direction_; }
+  const Vec2d &unit_direction() const { return unit_direction_; } // 返回单位向量
 
   /**
    * @brief Get the center of the line segment.
@@ -76,7 +76,7 @@ class LineSegment2d {
   Vec2d center() const { return (start_ + end_) / 2.0; }
 
   /** @brief Get a new line-segment with the same start point, but rotated
-   * counterclock-wise by the given amount.
+   * counterclock-wise by the given amount. - 逆时针旋转 angle 角度，得到新的线段
    * @return The rotated line-segment's end-point.
    */
   Vec2d rotate(const double angle);

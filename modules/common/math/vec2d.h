@@ -86,10 +86,10 @@ class Vec2d {
   //! Returns the inner product between these two Vec2d.
   double InnerProd(const Vec2d &other) const;
 
-  //! rotate the vector by angle.
+  //! rotate the vector by angle. - 旋转一定角度，返回新构造的 Vec2d
   Vec2d rotate(const double angle) const;
 
-  //! rotate the vector itself by angle.
+  //! rotate the vector itself by angle. - 自身旋转，就是更新它自己的 x, y 信息
   void SelfRotate(const double angle);
 
   //! Sums two Vec2d
