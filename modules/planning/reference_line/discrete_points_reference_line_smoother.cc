@@ -49,7 +49,7 @@ bool DiscretePointsReferenceLineSmoother::Smooth(
   // road
   anchorpoints_lateralbound.front() = 0.0;
   anchorpoints_lateralbound.back() = 0.0;
-
+  // 归一化参考点
   NormalizePoints(&raw_point2d);
 
   bool status = false;
@@ -74,7 +74,7 @@ bool DiscretePointsReferenceLineSmoother::Smooth(
     AERROR << "discrete_points reference line smoother fails";
     return false;
   }
-
+  // 反正则化，获取点的原来的坐标
   DeNormalizePoints(&smoothed_point2d);
 
   std::vector<ReferencePoint> ref_points;
@@ -181,8 +181,8 @@ void DiscretePointsReferenceLineSmoother::SetAnchorPoints(
 
 void DiscretePointsReferenceLineSmoother::NormalizePoints(
     std::vector<std::pair<double, double>>* xy_points) {
-  zero_x_ = xy_points->front().first;
-  zero_y_ = xy_points->front().second;
+  zero_x_ = xy_points->front().first;  // 第一个点的 x 坐标
+  zero_y_ = xy_points->front().second; // 第一个点的 y 坐标
   std::for_each(xy_points->begin(), xy_points->end(),
                 [this](std::pair<double, double>& point) {
                   auto curr_x = point.first;
@@ -191,6 +191,7 @@ void DiscretePointsReferenceLineSmoother::NormalizePoints(
                                                curr_y - zero_y_);
                   point = std::move(xy);
                 });
+  // 相当于把每个点的 x，y 坐标都换算成相对于第一个点的相对坐标
 }
 
 void DiscretePointsReferenceLineSmoother::DeNormalizePoints(
@@ -207,7 +208,7 @@ void DiscretePointsReferenceLineSmoother::DeNormalizePoints(
 
 bool DiscretePointsReferenceLineSmoother::GenerateRefPointProfile(
     const ReferenceLine& raw_reference_line,
-    const std::vector<std::pair<double, double>>& xy_points,
+    const std::vector<std::pair<double, double>>& xy_points, // smoothed_point2d
     std::vector<ReferencePoint>* reference_points) {
   // Compute path profile
   std::vector<double> headings;

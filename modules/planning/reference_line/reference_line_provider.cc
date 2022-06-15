@@ -770,10 +770,10 @@ bool ReferenceLineProvider::IsReferenceLineSmoothValid(
   }
   return true;
 }
-
+// 进行采样点的坐标计算以及坐标矫正
 AnchorPoint ReferenceLineProvider::GetAnchorPoint(
     const ReferenceLine &reference_line, double s) const {
-  AnchorPoint anchor;
+  AnchorPoint anchor; // 构造新的 AnchorPoint
   anchor.longitudinal_bound = smoother_config_.longitudinal_boundary_bound();
   auto ref_point = reference_line.GetReferencePoint(s);
   if (ref_point.lane_waypoints().empty()) {
@@ -781,21 +781,23 @@ AnchorPoint ReferenceLineProvider::GetAnchorPoint(
     anchor.lateral_bound = smoother_config_.max_lateral_boundary_bound();
     return anchor;
   }
-
+  // 得到车辆宽度信息
   const double adc_width =
       VehicleConfigHelper::GetConfig().vehicle_param().width();
+  // 
   const Vec2d left_vec =
       Vec2d::CreateUnitVec2d(ref_point.heading() + M_PI / 2.0);
   auto waypoint = ref_point.lane_waypoints().front();
-  double left_width = 0.0;
-  double right_width = 0.0;
+  double left_width = 0.0; // 参考线距离车道左边界的距离
+  double right_width = 0.0; // 参考线距离车道右边界的距离
+  // HD Map 中查询得到上面的左右宽度信息
   waypoint.lane->GetWidth(waypoint.s, &left_width, &right_width);
   const double kEpislon = 1e-8;
   double effective_width = 0.0;
 
   // shrink width by vehicle width, curb
   double safe_lane_width = left_width + right_width;
-  safe_lane_width -= adc_width;
+  safe_lane_width -= adc_width; // 基于自车宽度，计算 safe_lane_width
   bool is_lane_width_safe = true;
 
   if (safe_lane_width < kEpislon) {
@@ -806,6 +808,7 @@ AnchorPoint ReferenceLineProvider::GetAnchorPoint(
   }
 
   double center_shift = 0.0;
+  // 如果车道右侧边界类型是 curb（路边石），继续收缩安全宽度
   if (hdmap::RightBoundaryType(waypoint) == hdmap::LaneBoundaryType::CURB) {
     safe_lane_width -= smoother_config_.curb_shift();
     if (safe_lane_width < kEpislon) {
@@ -813,7 +816,7 @@ AnchorPoint ReferenceLineProvider::GetAnchorPoint(
       effective_width = kEpislon;
       is_lane_width_safe = false;
     } else {
-      center_shift += 0.5 * smoother_config_.curb_shift();
+      center_shift += 0.5 * smoother_config_.curb_shift(); // 0.2 米
     }
   }
   if (hdmap::LeftBoundaryType(waypoint) == hdmap::LaneBoundaryType::CURB) {
@@ -861,10 +864,13 @@ void ReferenceLineProvider::GetAnchorPoints(
                               &anchor_s);
   for (const double s : anchor_s) {
     // 在 reference_line 上位移为 s 的位置采样一个点作为 anchor point
+    // 根据每个采样点的累积距离 s，以及 Path 的lane_segments_to_next_point_
+    // 进行平滑插值，得到累积距离为 s 的采样点的坐标 (x,y)，并进行轨迹点矫正。
     AnchorPoint anchor = GetAnchorPoint(reference_line, s);
     anchor_points->emplace_back(anchor);
   }
-  // 整条参考线的起始点和最后一个点的位置约束为强约束，就是横纵向的 bound 都很小（1e-6）
+  // 整条参考线的起始点和最后一个点的位置约束为强约束，
+  // 就是横纵向的 bound 都很小（1e-6）
   anchor_points->front().longitudinal_bound = 1e-6;
   anchor_points->front().lateral_bound = 1e-6;
   anchor_points->front().enforced = true;

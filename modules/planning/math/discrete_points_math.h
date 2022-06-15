@@ -29,7 +29,8 @@ namespace planning {
 class DiscretePointsMath {
  public:
   DiscretePointsMath() = delete;
-
+  // 输入点 x，y 坐标，输出 headings（航向角），accumulated_s（里程）
+  // kappas（曲率），dkappas（曲率微分）
   static bool ComputePathProfile(
       const std::vector<std::pair<double, double>>& xy_points,
       std::vector<double>* headings, std::vector<double>* accumulated_s,

@@ -32,7 +32,7 @@ CosThetaIpoptInterface::CosThetaIpoptInterface(
   CHECK_GT(bounds.size(), 1);
   bounds_ = std::move(bounds);
   ref_points_ = std::move(points);
-  num_of_points_ = ref_points_.size();
+  num_of_points_ = ref_points_.size(); // 实际上就是 AnchorPoints 的个数
 }
 
 void CosThetaIpoptInterface::get_optimization_results(
@@ -47,7 +47,7 @@ bool CosThetaIpoptInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
   // number of variables
   n = static_cast<int>(num_of_points_ << 1); // 左移运算符
   // 即将 num_of_points_ 的二进制数左移一位，相当于乘以二，得到的数赋给 n。
-  // 假设有 3 个点的话，n = 6，即有 6 个变量(x1, y1, x2, y2, x3, y3)
+  // 假设有 3 个点的话，n = 6，即有 6 个变量 (x1, y1, x2, y2, x3, y3)
   num_of_variables_ = n;
 
   // number of constraints

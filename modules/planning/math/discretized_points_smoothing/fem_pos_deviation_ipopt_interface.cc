@@ -43,18 +43,24 @@ void FemPosDeviationIpoptInterface::get_optimization_results(
 bool FemPosDeviationIpoptInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
                                                  int& nnz_h_lag,
                                                  IndexStyleEnum& index_style) {
-  CHECK_GT(num_of_points_, 3);
+  CHECK_GT(num_of_points_, 3); // 需要 num_of_points 至少大于 3 
   // Number of variables
   // Variables include 2D points and curvature constraints slack variable
-  num_of_slack_var_ = num_of_points_ - 2;
+  num_of_slack_var_ = num_of_points_ - 2; 
+  // 由于需要 3 个点才能计算一次曲率约束，假设共有 4 个点，
+  // 那么曲率约束的个数为 2，对应松弛变量的个数也是 2，即 num_of_points - 2 个。
+  // n 是优化问题的总的变量的个数，这里包含每个点的 x, y 坐标，以及 松弛变量
   n = static_cast<int>(num_of_points_ * 2 + num_of_slack_var_);
   num_of_variables_ = n;
 
   // Number of constraints
-  // Constraints includes positional constraints, curvature constraints and
-  // slack variable constraints
+  // Constraints includes:
+  //    positional constraints (位置约束 2n 个)
+  //    curvature constraints (曲率约束 n-2 个)
+  //    slack variable constraints (松弛变量自己的约束 n-2 个)
   num_of_curvature_constr_ = num_of_points_ - 2;
   num_of_slack_constr_ = num_of_points_ - 2;
+  // m 是优化问题总的约束的个数
   m = static_cast<int>(num_of_points_ * 2 + num_of_curvature_constr_ +
                        num_of_slack_constr_);
   num_of_constraints_ = m;
@@ -62,11 +68,15 @@ bool FemPosDeviationIpoptInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
   // Indexes for variables and constraints,
   // Start index is actual first index and end index is one index after the
   // actual final index
-  slack_var_start_index_ = num_of_points_ * 2;
-  slack_var_end_index_ = slack_var_start_index_ + num_of_slack_var_;
+  // 这部分只是一些标志符，用来直接在构造约束条件和约束边界时，让它们一一对应。
+  // 在自变量 x 中，松弛变量的 index 的起始值 和 终止值
+  slack_var_start_index_ = num_of_points_ * 2; 
+  slack_var_end_index_ = slack_var_start_index_ + num_of_slack_var_; 
+  // 在约束条件 g 中，曲率约束的 index 的起始值和终止值 
   curvature_constr_start_index_ = num_of_points_ * 2;
   curvature_constr_end_index_ =
       curvature_constr_start_index_ + num_of_curvature_constr_;
+  // 在约束条件 g 中，松弛变量自己的 index 的起始值和终止值
   slack_constr_start_index_ = curvature_constr_end_index_;
   slack_constr_end_index_ = slack_constr_start_index_ + num_of_slack_constr_;
 
@@ -143,7 +153,8 @@ bool FemPosDeviationIpoptInterface::get_bounds_info(int n, double* x_l,
   return true;
 }
 
-bool FemPosDeviationIpoptInterface::get_starting_point(int n, bool init_x,
+// bool init_x - (in) if true,  this method must provide an initial value for x
+bool FemPosDeviationIpoptInterface::get_starting_point(int n, bool init_x, 
                                                        double* x, bool init_z,
                                                        double* z_L, double* z_U,
                                                        int m, bool init_lambda,
@@ -151,12 +162,13 @@ bool FemPosDeviationIpoptInterface::get_starting_point(int n, bool init_x,
   CHECK_EQ(static_cast<size_t>(n), num_of_variables_);
   for (size_t i = 0; i < num_of_points_; ++i) {
     size_t index = i * 2;
-    x[index] = ref_points_[i].first;
-    x[index + 1] = ref_points_[i].second;
+    // 给自变量 x 赋初值
+    x[index] = ref_points_[i].first; // 给 xi 赋初值
+    x[index + 1] = ref_points_[i].second; // 给 yi 赋初值
   }
 
   for (size_t i = slack_var_start_index_; i < slack_var_end_index_; ++i) {
-    x[i] = 0.0;
+    x[i] = 0.0; // 松弛变量初值为 0.0
   }
 
   return true;
