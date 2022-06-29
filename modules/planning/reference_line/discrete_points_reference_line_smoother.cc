@@ -36,6 +36,7 @@ DiscretePointsReferenceLineSmoother::DiscretePointsReferenceLineSmoother(
 bool DiscretePointsReferenceLineSmoother::Smooth(
     const ReferenceLine& raw_reference_line,
     ReferenceLine* const smoothed_reference_line) {
+
   std::vector<std::pair<double, double>> raw_point2d;
   std::vector<double> anchorpoints_lateralbound;
 
@@ -136,6 +137,7 @@ bool DiscretePointsReferenceLineSmoother::FemPosSmooth(
     const std::vector<std::pair<double, double>>& raw_point2d,
     const std::vector<double>& bounds,
     std::vector<std::pair<double, double>>* ptr_smoothed_point2d) {
+        
   const auto& fem_pos_config =
       config_.discrete_points().fem_pos_deviation_smoothing();
 
