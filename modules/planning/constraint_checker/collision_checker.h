@@ -34,9 +34,11 @@ namespace planning {
 
 class CollisionChecker {
  public:
+  // 带参构造函数
   CollisionChecker(
-      const std::vector<const Obstacle*>& obstacles, const double ego_vehicle_s,
-      const double ego_vehicle_d,
+      const std::vector<const Obstacle*>& obstacles, // 障碍物列表
+      const double ego_vehicle_s, // 自车在 s 方向的位置
+      const double ego_vehicle_d, // 自车的横向偏移（就是自车在 Frenet 坐标系下的坐标）
       const std::vector<common::PathPoint>& discretized_reference_line,
       const ReferenceLineInfo* ptr_reference_line_info,
       const std::shared_ptr<PathTimeGraph>& ptr_path_time_graph);
@@ -49,14 +51,18 @@ class CollisionChecker {
                           const double ego_edge_to_center);
 
  private:
+  // 建立预测环境函数：其实就是把待考虑障碍物的 0-8s 预测轨迹上的二维边界盒
+  // 都塞入类成员 predicted_bounding_rectangles_了
+  // 输入参数：障碍物列表，自车横纵向坐标，离散参考线
   void BuildPredictedEnvironment(
-      const std::vector<const Obstacle*>& obstacles, const double ego_vehicle_s,
+      const std::vector<const Obstacle*>& obstacles, 
+      const double ego_vehicle_s,
       const double ego_vehicle_d,
       const std::vector<common::PathPoint>& discretized_reference_line);
-
+  // 判断自车是否在参考线的车道上
   bool IsEgoVehicleInLane(const double ego_vehicle_s,
                           const double ego_vehicle_d);
-
+  // 判断障碍物是否在自车后面的同一车道上
   bool IsObstacleBehindEgoVehicle(
       const Obstacle* obstacle, const double ego_vehicle_s,
       const std::vector<apollo::common::PathPoint>& discretized_reference_line);

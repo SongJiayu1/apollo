@@ -46,6 +46,9 @@ CollisionChecker::CollisionChecker(
     const std::shared_ptr<PathTimeGraph>& ptr_path_time_graph) {
   ptr_reference_line_info_ = ptr_reference_line_info;
   ptr_path_time_graph_ = ptr_path_time_graph;
+  // 将自车附近需要考虑的障碍物 0-8s 预测轨迹上的二维边界盒
+  // 都塞入类成员 predicted_bounding_rectangles_ 来构建二维边界盒列表，
+  // 代表 0-8s 自车周围的环境。
   BuildPredictedEnvironment(obstacles, ego_vehicle_s, ego_vehicle_d,
                             discretized_reference_line);
 }
@@ -54,6 +57,7 @@ bool CollisionChecker::InCollision(
     const std::vector<const Obstacle*>& obstacles,
     const DiscretizedTrajectory& ego_trajectory, const double ego_length,
     const double ego_width, const double ego_back_edge_to_center) {
+  // 
   for (size_t i = 0; i < ego_trajectory.NumOfPoints(); ++i) {
     const auto& ego_point =
         ego_trajectory.TrajectoryPointAt(static_cast<std::uint32_t>(i));

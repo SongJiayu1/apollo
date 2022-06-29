@@ -54,10 +54,10 @@ bool DiscretePointsMath::ComputePathProfile(
   for (std::size_t i = 0; i < points_size; ++i) {
     double x_delta = 0.0;
     double y_delta = 0.0;
-    if (i == 0) {
+    if (i == 0) { // 第一个点
       x_delta = (xy_points[i + 1].first - xy_points[i].first);
       y_delta = (xy_points[i + 1].second - xy_points[i].second);
-    } else if (i == points_size - 1) {
+    } else if (i == points_size - 1) { // 最后一个点
       x_delta = (xy_points[i].first - xy_points[i - 1].first);
       y_delta = (xy_points[i].second - xy_points[i - 1].second);
     } else {
