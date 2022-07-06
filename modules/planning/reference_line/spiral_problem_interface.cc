@@ -56,7 +56,7 @@ SpiralProblemInterface::SpiralProblemInterface(
     point_distances_.push_back((init_points_[i + 1] - init_points_[i]).norm());
   }
 
-  std::vector<double> normalized_theta;
+  std::vector<double> normalized_theta; // 
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     Eigen::Vector2d v = init_points_[i + 1] - init_points_[i];
     double theta = std::atan2(v.y(), v.x());
@@ -91,7 +91,7 @@ bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
                                           IndexStyleEnum& index_style) {
   // number of variables
   // n 定义了变量个数，由于每个点包含了 5 个优化变量和 1 个两点之间弧长的变量，所以：
-  n = num_of_points_ * 5 + num_of_points_ - 1;
+  n = num_of_points_ * 5 + num_of_points_ - 1; // delta_s 只有 num_of_points_ -1 个
   num_of_variables_ = n;
 
   // number of constraints
@@ -103,11 +103,12 @@ bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
   m += num_of_points_;  // 位置平移约束
   num_of_constraints_ = m;
 
-  // number of nonzero constraint jacobian.
+  // number of nonzero constraint jacobian. - 这部分是如何计算出来的？？？
   nnz_jac_g = (num_of_points_ - 1) * 2 * 9 + num_of_points_ * 2;
 
   // number of nonzero hessian and lagrangian.
-  nnz_h_lag = 0;
+  nnz_h_lag = 0; // 由于这里使用了 ipopt 的拟牛顿法，
+  // 内部直接求了 Hessian 矩阵，因此这里赋值为 0 了。
 
   index_style = IndexStyleEnum::C_STYLE;
   return true;
@@ -115,13 +116,13 @@ bool SpiralProblemInterface::get_nlp_info(int& n, int& m, int& nnz_jac_g,
 // 定义优化变量的上下边界和约束的上下边界
 bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
                                              int m, double* g_l, double* g_u) {
-  // x_l，x_u 定义了优化变量的下边界和上边界
+  // x_l，x_u 定义了优化变量本身的取值范围
   // g_l，g_u 定义了约束的下边界和上边界
   // m 为约束的数量，n 为变量的数量
   CHECK_EQ(n, num_of_variables_);
   CHECK_EQ(m, num_of_constraints_);
 
-  // variables - 定义优化变量的上下边界
+  // variables - 定义优化变量本身的取值范围
   // a. for theta, kappa, dkappa, x, y 
   for (int i = 0; i < num_of_points_; ++i) {
     int index = i * 5;
@@ -211,9 +212,11 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
   // b. for delta_s
   int variable_offset = num_of_points_ * 5;
   for (int i = 0; i + 1 < num_of_points_; ++i) {
+    // delta_s 的取值下界
     x_l[variable_offset + i] =
         point_distances_[i] - 2.0 * default_max_point_deviation_;
-    x_u[variable_offset + i] = point_distances_[i] * M_PI * 0.5;
+    // delta_s 的取值上界
+    x_u[variable_offset + i] = point_distances_[i] * M_PI * 0.5; // ???
   }
 
   // constraints - 定义约束的上下边界
@@ -227,12 +230,13 @@ bool SpiralProblemInterface::get_bounds_info(int n, double* x_l, double* x_u,
     g_l[i * 2 + 1] = 0.0;
     g_u[i * 2 + 1] = 0.0;
   }
-  // b. positional deviation constraints
+  // b. positional deviation constraints - 位置平移约束的上下界
   int constraint_offset = 2 * (num_of_points_ - 1);
   for (int i = 0; i < num_of_points_; ++i) {
-    g_l[constraint_offset + i] = 0.0;
+    g_l[constraint_offset + i] = 0.0; // 位置平移约束的下界
     g_u[constraint_offset + i] =
         default_max_point_deviation_ * default_max_point_deviation_;
+        // 位置平移约束的上界 - 相当于 ri 的平方
   }
   return true;
 }
@@ -251,7 +255,7 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
   for (int i = 0; i < num_of_points_; ++i) {
     int index = i * 5;
     x[index] = relative_theta_[i];
-    x[index + 1] = 0.0;
+    x[index + 1] = 0.0; // 中间点的曲率，曲率变化率初值为 0。
     x[index + 2] = 0.0;
     x[index + 3] = init_points_[i].x();
     x[index + 4] = init_points_[i].y();
@@ -268,7 +272,7 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
     x[(i + 1) * 5 + 1] = delta_theta / x[variable_offset + i];
   }
   x[1] = x[6];
-
+  // 第一个点的曲率，曲率变化率根据实际给出
   if (has_fixed_start_point_) {
     x[0] = start_theta_;
     x[1] = start_kappa_;

@@ -162,6 +162,7 @@ class Box2d {
    * @brief Getter of the corners of the box
    * @param corners The vector where the corners are listed
    */
+  // 用指针的方法拿到 corners
   void GetAllCorners(std::vector<Vec2d> *const corners) const;
 
   /**

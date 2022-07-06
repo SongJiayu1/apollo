@@ -43,8 +43,13 @@ class CollisionChecker {
       const ReferenceLineInfo* ptr_reference_line_info,
       const std::shared_ptr<PathTimeGraph>& ptr_path_time_graph);
 
+  // Check if there are overlaps between obstacles and ego vehicle according
+  // to the predicted obstacles environment.
+  // 这个函数是根据 BuildPredictedEnvironment() 这个函数输出的预测环境信息进行检测。
   bool InCollision(const DiscretizedTrajectory& discretized_trajectory);
 
+  // Check if there are overlaps between obstacles' predicted trajectory 
+  // and ego vehicle's planning trajectory.
   static bool InCollision(const std::vector<const Obstacle*>& obstacles,
                           const DiscretizedTrajectory& ego_trajectory,
                           const double ego_length, const double ego_width,
@@ -52,7 +57,7 @@ class CollisionChecker {
 
  private:
   // 建立预测环境函数：其实就是把待考虑障碍物的 0-8s 预测轨迹上的二维边界盒
-  // 都塞入类成员 predicted_bounding_rectangles_了
+  // 都塞入类成员 predicted_bounding_rectangles_ 了
   // 输入参数：障碍物列表，自车横纵向坐标，离散参考线
   void BuildPredictedEnvironment(
       const std::vector<const Obstacle*>& obstacles, 

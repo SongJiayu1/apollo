@@ -72,7 +72,7 @@ bool SpiralReferenceLineSmoother::Smooth(
     size_t start_index = 0;
     for (const auto& anchor_point : anchor_points_) {
       if (anchor_point.enforced) {
-        start_index++;
+        start_index++; // 跳过强约束的 anchor point
       } else {
         break;
       }
@@ -86,6 +86,7 @@ bool SpiralReferenceLineSmoother::Smooth(
       }
     } else {
       std::vector<double> overhead_s;
+      // 把强约束的点的 s 差值都存入 overhead_s 容器中
       for (size_t i = 0; i + 1 < start_index; ++i) {
         const auto& p0 = anchor_points_[i];
         const auto& p1 = anchor_points_[i + 1];
@@ -109,7 +110,7 @@ bool SpiralReferenceLineSmoother::Smooth(
           raw_point2d.emplace_back(p.path_point.x(), p.path_point.y());
         }
       }
-
+      // 把强约束的最后一个点作为平滑的第一个点
       const auto& start_anchor_point = anchor_points_[start_index - 1];
       fixed_start_point_ = true;
       fixed_start_x_ = start_anchor_point.path_point.x();
@@ -143,7 +144,7 @@ bool SpiralReferenceLineSmoother::Smooth(
                     [this](double& y) { y += zero_y_; });
     }
   }
-
+  // 根据平滑后的轨迹点进行插值
   std::vector<common::PathPoint> smoothed_point2d =
       Interpolate(opt_theta, opt_kappa, opt_dkappa, opt_s, opt_x, opt_y,
                   config_.resolution());
@@ -396,7 +397,7 @@ void SpiralReferenceLineSmoother::SetAnchorPoints(
                   auto curr_y = p.path_point.y();
                   p.path_point.set_x(curr_x - zero_x_);
                   p.path_point.set_y(curr_y - zero_y_);
-                });
+                }); // 这部分是把每个点的坐标都转换成相对于起始点的坐标
 }
 
 }  // namespace planning

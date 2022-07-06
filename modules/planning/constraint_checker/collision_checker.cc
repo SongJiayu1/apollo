@@ -39,7 +39,8 @@ using apollo::common::math::PathMatcher;
 using apollo::common::math::Vec2d;
 
 CollisionChecker::CollisionChecker(
-    const std::vector<const Obstacle*>& obstacles, const double ego_vehicle_s,
+    const std::vector<const Obstacle*>& obstacles, 
+    const double ego_vehicle_s, 
     const double ego_vehicle_d,
     const std::vector<PathPoint>& discretized_reference_line,
     const ReferenceLineInfo* ptr_reference_line_info,
@@ -53,31 +54,41 @@ CollisionChecker::CollisionChecker(
                             discretized_reference_line);
 }
 
+// 注：这里是在自车轨迹上进行碰撞检测
 bool CollisionChecker::InCollision(
     const std::vector<const Obstacle*>& obstacles,
     const DiscretizedTrajectory& ego_trajectory, const double ego_length,
     const double ego_width, const double ego_back_edge_to_center) {
-  // 
+  // 遍历自车轨迹上的每一个点，得到 ego_point
   for (size_t i = 0; i < ego_trajectory.NumOfPoints(); ++i) {
-    const auto& ego_point =
+    const auto& ego_point = // ego_point 的类型为 TrajectoryPoint
         ego_trajectory.TrajectoryPointAt(static_cast<std::uint32_t>(i));
     const auto relative_time = ego_point.relative_time();
     const auto ego_theta = ego_point.path_point().theta();
-
+    // 构造自车的 bounding box，中心为 Trajectory 上的点（包含 theta 信息）
     Box2d ego_box({ego_point.path_point().x(), ego_point.path_point().y()},
                   ego_theta, ego_length, ego_width);
 
     // correct the inconsistency of reference point and center point
     // TODO(all): move the logic before constructing the ego_box
+    // 车辆中心和几何中心不一致，所以 box 需要校正一下。
+    // 注：是因为构造 ego_box 使用的是车辆的后轴中心，因此这里计算得到了从后轴中心
+    // 指向车辆几何中心的一个向量，把 ego_box 沿着这个向量平移过去。
     double shift_distance = ego_length / 2.0 - ego_back_edge_to_center;
     Vec2d shift_vec(shift_distance * std::cos(ego_theta),
                     shift_distance * std::sin(ego_theta));
     ego_box.Shift(shift_vec);
-
+    
+    // 定义一个障碍物二维边界盒空列表 
     std::vector<Box2d> obstacle_boxes;
+    // 遍历每个障碍物，建立每个障碍物在相同的 relative_time 下的 bounding box。
     for (const auto obstacle : obstacles) {
+      // Get obstacle's trajectory point according to the time.
       auto obtacle_point = obstacle->GetPointAtTime(relative_time);
+      // Construct a bounding box according to obstacle's length and 
+      // width got from perception module. 
       Box2d obstacle_box = obstacle->GetBoundingBox(obtacle_point);
+      // 如果自车 box 和 障碍物 box 发生重叠，说明发生碰撞。
       if (ego_box.HasOverlap(obstacle_box)) {
         return true;
       }
@@ -86,10 +97,14 @@ bool CollisionChecker::InCollision(
   return false;
 }
 
+// Check if there are overlaps between obstacles and ego vehicle according
+// to the predicted obstacles environment.
+// 这个函数是根据 BuildPredictedEnvironment() 这个函数输出的预测环境信息进行检测。
 bool CollisionChecker::InCollision(
     const DiscretizedTrajectory& discretized_trajectory) {
   CHECK_LE(discretized_trajectory.NumOfPoints(),
            predicted_bounding_rectangles_.size());
+  // 注：predicted_bounding_rectangles_ 是在 BuildPredictedEnvironment() 中计算的。
   const auto& vehicle_config =
       common::VehicleConfigHelper::Instance()->GetConfig();
   double ego_length = vehicle_config.vehicle_param().length();
@@ -99,15 +114,18 @@ bool CollisionChecker::InCollision(
     const auto& trajectory_point =
         discretized_trajectory.TrajectoryPointAt(static_cast<std::uint32_t>(i));
     double ego_theta = trajectory_point.path_point().theta();
+
     Box2d ego_box(
         {trajectory_point.path_point().x(), trajectory_point.path_point().y()},
         ego_theta, ego_length, ego_width);
+
     double shift_distance =
         ego_length / 2.0 - vehicle_config.vehicle_param().back_edge_to_center();
     Vec2d shift_vec{shift_distance * std::cos(ego_theta),
                     shift_distance * std::sin(ego_theta)};
     ego_box.Shift(shift_vec);
-
+    // 遍历 predicted_bounding_rectangles_ 中存储的 0-8s 所有待考虑的障碍物的
+    // 预测轨迹上的 bounding box，如果 has over lap，则表示发生了碰撞。
     for (const auto& obstacle_box : predicted_bounding_rectangles_[i]) {
       if (ego_box.HasOverlap(obstacle_box)) {
         return true;
@@ -116,9 +134,12 @@ bool CollisionChecker::InCollision(
   }
   return false;
 }
-
+// 建立预测环境函数：其实就是把待考虑障碍物的 0-8s 预测轨迹上的二维边界盒
+// 都塞入类成员 predicted_bounding_rectangles_ 了
+// 输入参数：障碍物列表，自车横纵向坐标，离散参考线
 void CollisionChecker::BuildPredictedEnvironment(
-    const std::vector<const Obstacle*>& obstacles, const double ego_vehicle_s,
+    const std::vector<const Obstacle*>& obstacles, 
+    const double ego_vehicle_s,
     const double ego_vehicle_d,
     const std::vector<PathPoint>& discretized_reference_line) {
   ACHECK(predicted_bounding_rectangles_.empty());
@@ -126,22 +147,26 @@ void CollisionChecker::BuildPredictedEnvironment(
   // If the ego vehicle is in lane,
   // then, ignore all obstacles from the same lane.
   bool ego_vehicle_in_lane = IsEgoVehicleInLane(ego_vehicle_s, ego_vehicle_d);
+
   std::vector<const Obstacle*> obstacles_considered;
   for (const Obstacle* obstacle : obstacles) {
-    if (obstacle->IsVirtual()) {
+    if (obstacle->IsVirtual()) { // 虚拟障碍物，跳过
       continue;
     }
+    // 如果自车在当前车道上，并且：
+    //      障碍物在自车后方 或 障碍物不在 ST 图上，则跳过
     if (ego_vehicle_in_lane &&
         (IsObstacleBehindEgoVehicle(obstacle, ego_vehicle_s,
                                     discretized_reference_line) ||
          !ptr_path_time_graph_->IsObstacleInGraph(obstacle->Id()))) {
       continue;
     }
-
+    // 将需要考虑的障碍物挑出来，存入容器中。
     obstacles_considered.push_back(obstacle);
   }
-
+  // 定义一个相对时间 relative_time = 0.0
   double relative_time = 0.0;
+  // 当相对时间 < 轨迹时间长度 8s 就一直在 while 循环中
   while (relative_time < FLAGS_trajectory_time_length) {
     std::vector<Box2d> predicted_env;
     for (const Obstacle* obstacle : obstacles_considered) {
@@ -157,7 +182,7 @@ void CollisionChecker::BuildPredictedEnvironment(
     relative_time += FLAGS_trajectory_time_resolution;
   }
 }
-
+// 判断自车是否在参考线的车道上
 bool CollisionChecker::IsEgoVehicleInLane(const double ego_vehicle_s,
                                           const double ego_vehicle_d) {
   double left_width = FLAGS_default_reference_line_width * 0.5;
@@ -166,7 +191,7 @@ bool CollisionChecker::IsEgoVehicleInLane(const double ego_vehicle_s,
       ego_vehicle_s, &left_width, &right_width);
   return ego_vehicle_d < left_width && ego_vehicle_d > -right_width;
 }
-
+// 判断障碍物是否在自车后面的同一车道上
 bool CollisionChecker::IsObstacleBehindEgoVehicle(
     const Obstacle* obstacle, const double ego_vehicle_s,
     const std::vector<PathPoint>& discretized_reference_line) {
