@@ -304,7 +304,7 @@ bool SpiralProblemInterface::eval_f(int n, const double* x, bool new_x,
     for (int j = 0; j < num_of_internal_points_; ++j) {
       double ratio =
           static_cast<double>(j) / static_cast<double>(num_of_internal_points_);
-      // 内部节点在曲线的弧长
+      // 内部节点在该段曲线上的 s 位置
       double s = ratio * delta_s;
       // 曲率加权和
       double kappa = spiral_curve.Evaluate(1, s);
