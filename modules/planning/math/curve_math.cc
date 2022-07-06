@@ -44,7 +44,8 @@ double CurveMath::ComputeCurvatureDerivative(const double dx, const double d2x,
   const double c = dx * d2x + dy * d2y;
   const double d = dx * dx + dy * dy;
 
-  return (b * d - 3.0 * a * c) / (d * d * d);
+  return (b * d - 3.0 * a * c) / (d * d * d); 
+//    return (b * d - 3.0 * a * c) / pow(d, 2.5); - 应该这样计算曲率变化率
 }
 
 }  // namespace planning
