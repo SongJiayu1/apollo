@@ -30,7 +30,7 @@
 namespace apollo {
 namespace planning {
 
-template <size_t N>
+template <size_t N> // 类模板
 class QuinticSpiralPathWithDerivation : public QuinticPolynomialCurve1d {
  public:
   QuinticSpiralPathWithDerivation() = default;
@@ -60,8 +60,8 @@ class QuinticSpiralPathWithDerivation : public QuinticPolynomialCurve1d {
   double DeriveDKappaDerivative(const size_t param_index, const int i,
                                 const int n);
   // 求偏导的变量
-  static const size_t THETA0 = 0; // 对起点的 theta 求偏导
-  static const size_t KAPPA0 = 1; // 对起点的 kappa 求偏导
+  static const size_t THETA0 = 0;  // 对起点的 theta 求偏导
+  static const size_t KAPPA0 = 1;  // 对起点的 kappa 求偏导
   static const size_t DKAPPA0 = 2; // 对起点的 dkappa 求偏导
   static const size_t THETA1 = 3;
   static const size_t KAPPA1 = 4;
@@ -69,15 +69,17 @@ class QuinticSpiralPathWithDerivation : public QuinticPolynomialCurve1d {
   static const size_t DELTA_S = 6;
 
   static const size_t INDEX_MAX = 7;
-
+  
+  // 由 s 计算螺旋曲线上点在笛卡尔坐标系下的 x 值
   double ComputeCartesianDeviationX(const double s) const {
     auto cos_theta = [this](const double s) {
-      const auto a = Evaluate(0, s);
+      const auto a = Evaluate(0, s); // 求螺旋曲线在 s 处的 heading
       return std::cos(a);
     };
     return common::math::IntegrateByGaussLegendre<N>(cos_theta, 0.0, s);
+    // 注：这里的 N 就是 QuinticSpiralPathWithDerivation 的模板 
   }
-
+  // 由 s 计算螺旋曲线上点在笛卡尔坐标系下的 y 值
   double ComputeCartesianDeviationY(const double s) const {
     auto sin_theta = [this](const double s) {
       const auto a = Evaluate(0, s);
@@ -138,10 +140,11 @@ QuinticSpiralPathWithDerivation<N>::QuinticSpiralPathWithDerivation(
       coef_deriv_[i][j] = 0.0;
     }
   }
+  // 构造 coef_deriv_ 矩阵
   // derive a
   // double a = -6.0 * x0 / p5 - 3.0 * dx0 / p4 - 0.5 * ddx0 / p3 + 6.0 * x1 /
   // p5 - 3.0 * dx1 / p4 + 0.5 * ddx1 / p3;
-  coef_deriv_[5][0] = -6.0 / s5;
+  coef_deriv_[5][0] = -6.0 / s5; // 第 6 行第 1 列
   coef_deriv_[5][1] = -3.0 / s4;
   coef_deriv_[5][2] = -0.5 / s3;
   coef_deriv_[5][3] = 6.0 / s5;
@@ -208,6 +211,7 @@ double QuinticSpiralPathWithDerivation<N>::evaluate(const size_t order,
   return res;
 }
 
+// 螺旋曲线的 x，y 表达式，对 theta0, theta0'... theta1,...delta_s 求偏导
 template <size_t N>
 std::pair<double, double>
 QuinticSpiralPathWithDerivation<N>::DeriveCartesianDeviation(
@@ -221,10 +225,17 @@ QuinticSpiralPathWithDerivation<N>::DeriveCartesianDeviation(
   const auto& w = gauss_point_weights_;
 
   std::pair<double, double> cartesian_deviation = {0.0, 0.0};
+  // 这里 cartesian_deviation.first 存放的是 x(s) 对 theta0 ... 的偏导的值
+  // cartesian_deviation.second 存放的是 y(s) 对 theta0 ... 的偏导的值
   if (param_index != DELTA_S) {
     for (size_t i = 0; i < N; ++i) {
+      // 假如螺旋曲线为 theta(s)，r 就是这个 s，只不过 r 的形式是从高斯-勒让德积分来的。
       double r = 0.5 * g[i] + 0.5;
+      // 把螺旋曲线的笛卡尔坐标 x(s) 用高斯-勒让德积分表达出来后，
+      // 再对 theta, theta0'... 求偏导
       cartesian_deviation.first += w[i] * DeriveCosTheta(param_index, r);
+      // 把螺旋曲线的笛卡尔坐标 y(s) 用高斯-勒让德积分表达出来后，
+      // 再对 theta, theta0'... 求偏导
       cartesian_deviation.second += w[i] * DeriveSinTheta(param_index, r);
     }
 
@@ -255,6 +266,14 @@ QuinticSpiralPathWithDerivation<N>::DeriveCartesianDeviation(
 template <size_t N>
 double QuinticSpiralPathWithDerivation<N>::DeriveKappaDerivative(
     const size_t param_index, const int i, const int n) {
+// 注：这里的 param_index 范围是 0 - 6，含义如下：
+//   static const size_t THETA0 = 0;
+//   static const size_t KAPPA0 = 1;
+//   static const size_t DKAPPA0 = 2;
+//   static const size_t THETA1 = 3;
+//   static const size_t KAPPA1 = 4;
+//   static const size_t DKAPPA1 = 5;
+//   static const size_t DELTA_S = 6;
   auto key = param_index * INDEX_MAX + i;
   if (cache_kappa_deriv_.find(key) != cache_kappa_deriv_.end()) {
     return cache_kappa_deriv_[key];
@@ -265,13 +284,15 @@ double QuinticSpiralPathWithDerivation<N>::DeriveKappaDerivative(
   double s2 = s * s;
   double s3 = s2 * s;
   double s4 = s2 * s2;
-
+  // 求螺旋曲线一阶导的表达式，对某一个优化变量的偏导数的函数值。
+  // 例如：param_index = 0, 表示对 theta0 求偏导的函数值
   double derivative = 5.0 * coef_deriv_[5][param_index] * s4 +
                       4.0 * coef_deriv_[4][param_index] * s3 +
                       3.0 * coef_deriv_[3][param_index] * s2 +
                       2.0 * coef_deriv_[2][param_index] * s +
                       coef_deriv_[1][param_index];
-
+  // 对 delta_s 求偏导时，由于在系数 a-f 的表达式中已经有 delta_s，这部分偏导在上面的
+  // 计算中得到，但是由于函数本身的自变量是 s，所以需要再加上下面的偏导值。
   if (param_index == DELTA_S) {
     derivative += 20.0 * coef_[5] * s3 * r + 12.0 * coef_[4] * s2 * r +
                   6.0 * coef_[3] * s * r + 2.0 * coef_[2] * r;
@@ -293,7 +314,7 @@ double QuinticSpiralPathWithDerivation<N>::DeriveDKappaDerivative(
   double s = param_ * r;
   double s2 = s * s;
   double s3 = s2 * s;
-
+  // 求螺旋曲线一阶导的表达式，对某一个优化变量的偏导数的函数值。
   double derivative = 20.0 * coef_deriv_[5][param_index] * s3 +
                       12.0 * coef_deriv_[4][param_index] * s2 +
                       6.0 * coef_deriv_[3][param_index] * s +
@@ -316,7 +337,7 @@ double QuinticSpiralPathWithDerivation<N>::DeriveThetaDerivative(
   double s3 = s2 * s;
   double s4 = s2 * s2;
   double s5 = s3 * s2;
-
+  // 求螺旋曲线的表达式，对某一个优化变量的偏导数的函数值。
   double derivative =
       coef_deriv_[5][param_index] * s5 + coef_deriv_[4][param_index] * s4 +
       coef_deriv_[3][param_index] * s3 + coef_deriv_[2][param_index] * s2 +
@@ -345,8 +366,9 @@ double QuinticSpiralPathWithDerivation<N>::DeriveSinTheta(
     const size_t param_index, const double r) const {
   double g = param_ * r;
   double theta = Evaluate(0, g);
-
   double derivative = std::cos(theta) * DeriveThetaDerivative(param_index, r);
+  // 这里的 DeriveThetaDerivative() 是螺旋曲线 theta 的表达式，
+  // 对 theta0, theta0', ...theta1, thera1' ... 的偏导。
   return derivative;
 }
 

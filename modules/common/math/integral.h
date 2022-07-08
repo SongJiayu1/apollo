@@ -273,9 +273,11 @@ double IntegrateByGaussLegendre(const std::function<double(double)>& func,
                                 const double upper_bound) {
   auto p = GetGaussLegendrePoints<N>();
 
-  std::array<double, N> x = p.first;
-  std::array<double, N> w = p.second;
-
+  std::array<double, N> x = p.first; // 高斯点 xk，N 为高斯点的个数
+  std::array<double, N> w = p.second; // 高斯系数 Ak
+  // upper_bound 和 lower_bound 为原始的积分区间
+  // upper_bound - 对应公式中的 b
+  // lower_bound - 对于公式中的 a
   const double t = (upper_bound - lower_bound) * 0.5;
   const double m = (upper_bound + lower_bound) * 0.5;
 
@@ -283,7 +285,7 @@ double IntegrateByGaussLegendre(const std::function<double(double)>& func,
   for (size_t i = 0; i < N; ++i) {
     integral += w[i] * func(t * x[i] + m);
   }
-
+  
   return integral * t;
 }
 
