@@ -30,7 +30,7 @@
 namespace apollo {
 namespace planning {
 
-template <size_t N> // 类模板
+template <size_t N> // 非类型模板参数（non type template parameter）
 class QuinticSpiralPathWithDerivation : public QuinticPolynomialCurve1d {
  public:
   QuinticSpiralPathWithDerivation() = default;

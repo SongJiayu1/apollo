@@ -79,7 +79,8 @@ bool SpiralReferenceLineSmoother::Smooth(
     }
 
     std::vector<Eigen::Vector2d> raw_point2d;
-    if (start_index == 0) {
+    if (start_index == 0) { // 如果没有 enforced 的点，
+    // 那么将所有的路径点压入 raw_point2d
       for (const auto& anchor_point : anchor_points_) {
         raw_point2d.emplace_back(anchor_point.path_point.x(),
                                  anchor_point.path_point.y());
@@ -136,7 +137,10 @@ bool SpiralReferenceLineSmoother::Smooth(
       opt_s.insert(opt_s.begin(), overhead_s.begin(), overhead_s.end());
       opt_x.insert(opt_x.begin(), overhead_x.begin(), overhead_x.end());
       opt_y.insert(opt_y.begin(), overhead_y.begin(), overhead_y.end());
-
+      // 这里实际上是 De-Normalize，而 Normalize 部分在
+      // SpiralReferenceLineSmoother::SetAnchorPoints 里面完成了。
+      // 注：这里相当于 DiscretePointsReferenceLineSmoother::NormalizePoints()
+      // 和 DeNormalizePoints() 这两个函数。
       std::for_each(opt_x.begin(), opt_x.end(),
                     [this](double& x) { x += zero_x_; });
 

@@ -50,20 +50,24 @@ SpiralProblemInterface::SpiralProblemInterface(
     : init_points_(std::move(points)) {
   num_of_points_ = static_cast<int>(init_points_.size());
   CHECK_GT(num_of_points_, 1);
-
+  // point_distances_ 里面存放的就是每两个 anchor point 之间的 deltaS。
   point_distances_.reserve(num_of_points_ - 1);
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     point_distances_.push_back((init_points_[i + 1] - init_points_[i]).norm());
+    // 这里是 Eigen::Vector2d.norm() 返回向量的二范数
   }
 
-  std::vector<double> normalized_theta; // 
+  std::vector<double> normalized_theta;  
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     Eigen::Vector2d v = init_points_[i + 1] - init_points_[i];
     double theta = std::atan2(v.y(), v.x());
-    normalized_theta.push_back(theta);
+    normalized_theta.push_back(theta); // 计算每个点处的 theta
   }
+  // 由于最后一个 anchor point 的 heading 无法计算，
+  // 所以把倒数第二个点的 heading 当做最后一个点的 heading 了。
   normalized_theta.push_back(normalized_theta.back());
 
+  // 把 normalized_theta 中的第一个元素压入 relative_theta，之后以它为参考 heading。
   relative_theta_.push_back(normalized_theta.front());
   for (int i = 1; i < num_of_points_; ++i) {
     double theta_diff =
@@ -248,8 +252,8 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
                                                 bool init_lambda,
                                                 double* lambda) {
   CHECK_EQ(n, num_of_variables_);
-  ACHECK(init_x);
-  ACHECK(!init_z);
+  ACHECK(init_x); // bool, init_x = true, 表示必须给所有的优化变量 x 赋初值
+  ACHECK(!init_z); 
   ACHECK(!init_lambda);
   // 给每个点的 theta，曲率，曲率变化率，以及 x, y 坐标赋初值
   for (int i = 0; i < num_of_points_; ++i) {
@@ -270,8 +274,10 @@ bool SpiralProblemInterface::get_starting_point(int n, bool init_x, double* x,
   for (int i = 0; i + 1 < num_of_points_; ++i) {
     double delta_theta = relative_theta_[i + 1] - relative_theta_[i];
     x[(i + 1) * 5 + 1] = delta_theta / x[variable_offset + i];
+    // 这里相当于给第二个点及其之后的点的曲率赋初值
+    // i = 0, x[6] 
   }
-  x[1] = x[6];
+  x[1] = x[6]; 
   // 第一个点的曲率，曲率变化率根据实际给出
   if (has_fixed_start_point_) {
     x[0] = start_theta_;
