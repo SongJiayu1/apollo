@@ -149,6 +149,7 @@ bool SpiralReferenceLineSmoother::Smooth(
     }
   }
   // 根据平滑后的轨迹点进行插值
+  // 输入的是平滑后的每个 anchor point 处的 theta，kappa，dkappa，delta_s ...
   std::vector<common::PathPoint> smoothed_point2d =
       Interpolate(opt_theta, opt_kappa, opt_dkappa, opt_s, opt_x, opt_y,
                   config_.resolution());
@@ -330,14 +331,16 @@ std::vector<common::PathPoint> SpiralReferenceLineSmoother::Interpolate(
   for (size_t i = 0; i + 1 < theta.size(); ++i) {
     double start_x = x[i];
     double start_y = y[i];
-
+    
+    // 传入构造第 i 段螺旋曲线需要的参数，由螺旋曲线插值计算路径点。
+    //（根据 resolution 和 s[i] 进行插值）
     auto path_point_seg = Interpolate(
         start_x, start_y, start_s, theta[i], kappa[i], dkappa[i], theta[i + 1],
         kappa[i + 1], dkappa[i + 1], s[i], resolution);
 
     smoothed_point2d.insert(smoothed_point2d.end(), path_point_seg.begin(),
                             path_point_seg.end());
-
+    // 把第 i 次插值后的最后一个点的 s，作为新的 start_s
     start_s = smoothed_point2d.back().s();
   }
   return smoothed_point2d;

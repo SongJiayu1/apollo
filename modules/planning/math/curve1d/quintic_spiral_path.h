@@ -54,6 +54,7 @@ class QuinticSpiralPath : public QuinticPolynomialCurve1d {
     };
     return common::math::IntegrateByGaussLegendre<N>(cos_theta, 0.0, s);
   }
+  
   // 已知螺旋曲线上的 s 值，求笛卡尔坐标系下的 y 坐标
   template <size_t N>
   double ComputeCartesianDeviationY(const double s) const {
