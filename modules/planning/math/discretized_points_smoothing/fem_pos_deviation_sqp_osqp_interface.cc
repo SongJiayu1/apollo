@@ -53,10 +53,12 @@ bool FemPosDeviationSqpOsqpInterface::Solve() {
   // Calculate optimization states definitions
   num_of_points_ = static_cast<int>(ref_points_.size());
   num_of_pos_variables_ = num_of_points_ * 2;
-  num_of_slack_variables_ = num_of_points_ - 2;
+  num_of_slack_variables_ = num_of_points_ - 2; // 每个曲率约束对应一个 slack variable，
+  // 而每三个点才能计算一个曲率，所以  slack variable 的个数是点的个数 - 2。
   num_of_variables_ = num_of_pos_variables_ + num_of_slack_variables_;
 
-  num_of_variable_constraints_ = num_of_variables_;
+  num_of_variable_constraints_ = num_of_variables_; // 每个变量取值范围的约束，
+  // 变量为 x0, y0, x1, y1, ..., slack variable for each curvature constraint
   num_of_curvature_constraints_ = num_of_points_ - 2;
   num_of_constraints_ =
       num_of_variable_constraints_ + num_of_curvature_constraints_;
@@ -118,6 +120,7 @@ bool FemPosDeviationSqpOsqpInterface::Solve() {
 
   // Initial solution
   bool initial_solve_res = OptimizeWithOsqp(primal_warm_start, &work);
+  // 第一次优化结果会存入 opt_xy_，同时更新 slack_
 
   if (!initial_solve_res) {
     AERROR << "initial iteration solving fails";
@@ -141,6 +144,7 @@ bool FemPosDeviationSqpOsqpInterface::Solve() {
     bool fconverged = false;
 
     while (sub_itr < sqp_sub_max_iter_) {
+      // 把上一个周期的优化结果作为新的 primal warm start。
       SetPrimalWarmStart(opt_xy_, &primal_warm_start);
       CalculateOffset(&q);
       CalculateAffineConstraint(opt_xy_, &A_data, &A_indices, &A_indptr,
@@ -246,26 +250,28 @@ void FemPosDeviationSqpOsqpInterface::CalculateKernel(
   // |0,     0,       0,       0,       0,       0,       0, 0, 0,       ...|
   // |0,     0,       0,       0,       0,       0,       0, 0, 0, 0,       ...|
   // Only upper triangle needs to be filled
+
   std::vector<std::vector<std::pair<c_int, c_float>>> columns;
   columns.resize(num_of_variables_);
   int col_num = 0;
-
+  // 第 1、2 列：X + Y + Z；之所以有两列，是因为坐标有 x 和 y 两个变量。
   for (int col = 0; col < 2; ++col) {
     columns[col].emplace_back(col, weight_fem_pos_deviation_ +
                                        weight_path_length_ +
                                        weight_ref_deviation_);
     ++col_num;
   }
-
+  // 第 3、4 列：-2X-Y & 5X + 2Y + Z；
   for (int col = 2; col < 4; ++col) {
     columns[col].emplace_back(
         col - 2, -2.0 * weight_fem_pos_deviation_ - weight_path_length_);
+        // 这里的 col -2 实际上就是这个元素所在的行数。
     columns[col].emplace_back(col, 5.0 * weight_fem_pos_deviation_ +
                                        2.0 * weight_path_length_ +
                                        weight_ref_deviation_);
     ++col_num;
   }
-
+  // 第 5 列 ~ 第 num_of_points_-2 列: X & -4X -Y & 6X + 2Y + Z；
   int second_point_from_last_index = num_of_points_ - 2;
   for (int point_index = 2; point_index < second_point_from_last_index;
        ++point_index) {
@@ -282,7 +288,7 @@ void FemPosDeviationSqpOsqpInterface::CalculateKernel(
       ++col_num;
     }
   }
-
+  // 倒数第 3、4 列：-2X-Y & 5X + 2Y + Z；
   int second_point_col_from_last_col = num_of_pos_variables_ - 4;
   int last_point_col_from_last_col = num_of_pos_variables_ - 2;
   for (int col = second_point_col_from_last_col;
@@ -295,7 +301,7 @@ void FemPosDeviationSqpOsqpInterface::CalculateKernel(
                                        weight_ref_deviation_);
     ++col_num;
   }
-
+  // 倒数第 1、2 列：X + Y + Z；
   for (int col = last_point_col_from_last_col; col < num_of_pos_variables_;
        ++col) {
     columns[col].emplace_back(col - 4, weight_fem_pos_deviation_);
@@ -308,7 +314,7 @@ void FemPosDeviationSqpOsqpInterface::CalculateKernel(
   }
 
   CHECK_EQ(col_num, num_of_pos_variables_);
-
+  // CSC 矩阵处理
   int ind_p = 0;
   for (int i = 0; i < num_of_variables_; ++i) {
     P_indptr->push_back(ind_p);
@@ -327,37 +333,43 @@ void FemPosDeviationSqpOsqpInterface::CalculateOffset(std::vector<c_float>* q) {
   q->resize(num_of_variables_);
   for (int i = 0; i < num_of_points_; ++i) {
     const auto& ref_point_xy = ref_points_[i];
+
+    // -2.0*weight_ref_deviation*x_ref_i
     (*q)[2 * i] = -2.0 * weight_ref_deviation_ * ref_point_xy.first;
-    (*q)[2 * i + 1] = -2.0 * weight_ref_deviation_ * ref_point_xy.second;
+
+    // -2.0*weight_ref_deviation*y_ref_i
+    (*q)[2 * i + 1] = -2.0 * weight_ref_deviation_ * ref_point_xy.second; 
   }
   for (int i = 0; i < num_of_slack_variables_; ++i) {
     (*q)[num_of_pos_variables_ + i] = weight_curvature_constraint_slack_var_;
   }
 }
 
-std::vector<double>
-FemPosDeviationSqpOsqpInterface::CalculateLinearizedFemPosParams(
+std::vector<double> FemPosDeviationSqpOsqpInterface::CalculateLinearizedFemPosParams(
     const std::vector<std::pair<double, double>>& points, const size_t index) {
   CHECK_GT(index, 0);
   CHECK_LT(index, points.size() - 1);
-
-  double x_f = points[index - 1].first;
-  double x_m = points[index].first;
-  double x_l = points[index + 1].first;
-  double y_f = points[index - 1].second;
-  double y_m = points[index].second;
-  double y_l = points[index + 1].second;
-
-  double linear_term_x_f = 2.0 * x_f - 4.0 * x_m + 2.0 * x_l;
-  double linear_term_x_m = 8.0 * x_m - 4.0 * x_f - 4.0 * x_l;
-  double linear_term_x_l = 2.0 * x_l - 4.0 * x_m + 2.0 * x_f;
+  // 注 index 从 1 开始，直到 num_of_points - 2。
+  // 这里 index 实际上就是矩阵 A 中的行数，index = 1 时，计算矩阵 A 的第 0 行的六个元素。
+  double x_f = points[index - 1].first;  // x_i-1
+  double x_m = points[index].first;      // x_i
+  double x_l = points[index + 1].first;  // x_i+1
+  double y_f = points[index - 1].second; // y_i-1
+  double y_m = points[index].second;     // y_i
+  double y_l = points[index + 1].second; // y_i+1
+ 
+  // 偏导项
+  double linear_term_x_f = 2.0 * x_f - 4.0 * x_m + 2.0 * x_l; // 曲率表达式 F 对 x_i-1 求偏导
+  double linear_term_x_m = 8.0 * x_m - 4.0 * x_f - 4.0 * x_l; // 曲率表达式 F 对 x_i 求偏导
+  double linear_term_x_l = 2.0 * x_l - 4.0 * x_m + 2.0 * x_f; // 曲率表达式 F 对 x_i+1 求偏导
   double linear_term_y_f = 2.0 * y_f - 4.0 * y_m + 2.0 * y_l;
   double linear_term_y_m = 8.0 * y_m - 4.0 * y_f - 4.0 * y_l;
   double linear_term_y_l = 2.0 * y_l - 4.0 * y_m + 2.0 * y_f;
 
-  double linear_approx = (-2.0 * x_m + x_f + x_l) * (-2.0 * x_m + x_f + x_l) +
+  // F(X_ref) -  F'(X_ref) * X_ref
+  double linear_approx = (-2.0 * x_m + x_f + x_l) * (-2.0 * x_m + x_f + x_l) +  // F(X_ref)
                          (-2.0 * y_m + y_f + y_l) * (-2.0 * y_m + y_f + y_l) +
-                         -x_f * linear_term_x_f + -x_m * linear_term_x_m +
+                         -x_f * linear_term_x_f + -x_m * linear_term_x_m +      // F'(X_ref) * X_ref 
                          -x_l * linear_term_x_l + -y_f * linear_term_y_f +
                          -y_m * linear_term_y_m + -y_l * linear_term_y_l;
 
@@ -371,12 +383,12 @@ void FemPosDeviationSqpOsqpInterface::CalculateAffineConstraint(
     std::vector<c_int>* A_indptr, std::vector<c_float>* lower_bounds,
     std::vector<c_float>* upper_bounds) {
   const double scale_factor = 1;
-
+  
   std::vector<std::vector<double>> lin_cache;
   for (int i = 1; i < num_of_points_ - 1; ++i) {
     lin_cache.push_back(CalculateLinearizedFemPosParams(points, i));
   }
-
+  // 构造 A 矩阵
   std::vector<std::vector<std::pair<c_int, c_float>>> columns;
   columns.resize(num_of_variables_);
 
@@ -412,6 +424,7 @@ void FemPosDeviationSqpOsqpInterface::CalculateAffineConstraint(
                                     lin_cache[i][1] * scale_factor);
   }
 
+  
   int ind_a = 0;
   for (int i = 0; i < num_of_variables_; ++i) {
     A_indptr->push_back(ind_a);
@@ -422,10 +435,11 @@ void FemPosDeviationSqpOsqpInterface::CalculateAffineConstraint(
     }
   }
   A_indptr->push_back(ind_a);
-
+  
+  // 构造约束的上下边界
   lower_bounds->resize(num_of_constraints_);
   upper_bounds->resize(num_of_constraints_);
-
+  // x，y 的位置约束
   for (int i = 0; i < num_of_points_; ++i) {
     const auto& ref_point_xy = ref_points_[i];
     (*upper_bounds)[i * 2] = ref_point_xy.first + bounds_around_refs_[i];
@@ -433,12 +447,12 @@ void FemPosDeviationSqpOsqpInterface::CalculateAffineConstraint(
     (*lower_bounds)[i * 2] = ref_point_xy.first - bounds_around_refs_[i];
     (*lower_bounds)[i * 2 + 1] = ref_point_xy.second - bounds_around_refs_[i];
   }
-
+  // 松弛变量的约束
   for (int i = 0; i < num_of_slack_variables_; ++i) {
     (*upper_bounds)[num_of_pos_variables_ + i] = 1e20;
     (*lower_bounds)[num_of_pos_variables_ + i] = 0.0;
   }
-
+  // 曲率约束 
   double interval_sqr = average_interval_length_ * average_interval_length_;
   double curvature_constraint_sqr = (interval_sqr * curvature_constraint_) *
                                     (interval_sqr * curvature_constraint_);
@@ -483,6 +497,7 @@ void FemPosDeviationSqpOsqpInterface::SetPrimalWarmStart(
 
 bool FemPosDeviationSqpOsqpInterface::OptimizeWithOsqp(
     const std::vector<c_float>& primal_warm_start, OSQPWorkspace** work) {
+
   osqp_warm_start_x(*work, primal_warm_start.data());
 
   // Solve Problem
