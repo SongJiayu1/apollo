@@ -447,7 +447,7 @@ bool SpiralProblemInterface::eval_g(int n, const double* x, bool new_x, int m,
     // 所以 index0+3 正好是第 i 个点的 x 值，index1+3 是第 i+1 个点的 x 值
     double x_diff = x[index1 + 3] - x[index0 + 3] -
                     spiral_curve.ComputeCartesianDeviationX(delta_s);
-    g[i * 2] = x_diff * x_diff;
+    g[i * 2] = x_diff * x_diff; // 这里使用平方项，消除符号抵消的问题。
 
     double y_diff = x[index1 + 4] - x[index0 + 4] -
                     spiral_curve.ComputeCartesianDeviationY(delta_s);
