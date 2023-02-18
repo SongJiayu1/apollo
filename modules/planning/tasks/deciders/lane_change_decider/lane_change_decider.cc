@@ -39,47 +39,66 @@ LaneChangeDecider::LaneChangeDecider(
 }
 
 // added a dummy parameter to enable this task in ExecuteTaskOnReferenceLine
+// 添加了一个伪参数以在 ExecuteTaskOnReferenceLine 中启用此任务
+// 这个 ExecuteTaskOnReferenceLine 在\modules\planning\scenarios\stage.cc 目录下有具体内容。
 Status LaneChangeDecider::Process(
     Frame* frame, ReferenceLineInfo* const current_reference_line_info) {
   // Sanity checks.
   CHECK_NOTNULL(frame);
-
+  // 1. 载入 config。
   const auto& lane_change_decider_config = config_.lane_change_decider_config();
-
+  // 2. 通过 frame 拿到车辆此时所在的区域参考线个数。
   std::list<ReferenceLineInfo>* reference_line_info =
       frame->mutable_reference_line_info();
+  // 3. 没有参考线就 return，因为 apollo 的后续所有 tasks 全部都依赖参考线来做轨迹规划。
   if (reference_line_info->empty()) {
     const std::string msg = "Reference lines empty.";
     AERROR << msg;
     return Status(ErrorCode::PLANNING_ERROR, msg);
   }
-
+  // 4. 是否进行强制换道，如果是，执行 PrioritizeChangeLane。
+  // 当配置文件强制要求换道，则调用 PrioritizeChangeLane(true, reference_line_info)，
+  // 将换道参考线放到链表第一位，直接 return Status::OK()。
   if (lane_change_decider_config.reckless_change_lane()) {
+    // 若第一个参数为 true，则将 reference_line_info 中的第一个 变道车道 参考线移到第一位。
+    // 若第一个参数为 false，则将 reference_line_info 中的第一个 非变道车道 参考线移到第一位。
     PrioritizeChangeLane(true, reference_line_info);
     return Status::OK();
   }
-
+  // 5. 拿到上个周期的 lane change status。
   auto* prev_status = injector_->planning_context()
                           ->mutable_planning_status()
                           ->mutable_change_lane();
   double now = Clock::NowInSeconds();
-
+  // 5.1 默认设置 false。
   prev_status->set_is_clear_to_change_lane(false);
+  // 5.2 此处判断传进来的 referenceLineinfo 是否是变道参考线，如果是则通过。
+  // IsChangeLanePath()判断是否是可变车道，如果车不在车道片段上，则该车道为可变道车道。
   if (current_reference_line_info->IsChangeLanePath()) {
+    // IsClearToChangeLane() 检查该参考线是否满足变道条件。
+    // IsClearToChangeLane 只考虑传入的参考线上的动态障碍物，不考虑虚的和静态的障碍物。
+    // 5.3 获取 reference_line_info 中存储的所有动态 obstacle，遍历这些 obstacle
+    // 如果该障碍物不在 reference_line_info 所在的车道中，则不考虑
+    // 对于在此车道范围内的 obstacle，通过分析该障碍物的位置与运动方向，结合车辆的位置来
+    // 判断是否 iscleartochangelane。
     prev_status->set_is_clear_to_change_lane(
         IsClearToChangeLane(current_reference_line_info));
   }
-
+  // 6. 首次进入 task，车道换道状态应该为空，默认设置为换道结束状态。
   if (!prev_status->has_status()) {
     UpdateStatus(now, ChangeLaneStatus::CHANGE_LANE_FINISHED,
                  GetCurrentPathId(*reference_line_info));
     prev_status->set_last_succeed_timestamp(now);
     return Status::OK();
   }
-
+  // 7. 判断参考线数量，如果只有一条参考线为 false，多于一条参考线为 true。
   bool has_change_lane = reference_line_info->size() > 1;
   ADEBUG << "has_change_lane: " << has_change_lane;
+  // 7.1 如果只有一条参考线（比如往某个方向只有一条车道），那就通过 updatestatus 
+  // 将车辆状态设置为 CHANGE_LANE_FINISHED，就是单向只有一条车道，不需要换道，车辆就一直处于换道结束状态。
   if (!has_change_lane) {
+    // 如果只有一条参考线：如果上个周期状态是已经换道完成或者换道失败，
+    // 则返回 Status::OK() 进入下个 task 或者下个周期；如果上个周期状态是正在换道，更新换道状态。
     const auto& path_id = reference_line_info->front().Lanes().Id();
     if (prev_status->status() == ChangeLaneStatus::CHANGE_LANE_FINISHED) {
     } else if (prev_status->status() == ChangeLaneStatus::IN_CHANGE_LANE) {
@@ -92,7 +111,9 @@ Status LaneChangeDecider::Process(
       return Status(ErrorCode::PLANNING_ERROR, msg);
     }
     return Status::OK();
-  } else {  // has change lane in reference lines.
+  } else {
+    // has change lane in reference lines.
+    // 7.2 不止一条参考线的情况：主要逻辑为状态切换，实际操作还是通过 updatestatus 来实时更新车辆的换道状态。
     auto current_path_id = GetCurrentPathId(*reference_line_info);
     if (current_path_id.empty()) {
       const std::string msg = "The vehicle is not on any reference line";

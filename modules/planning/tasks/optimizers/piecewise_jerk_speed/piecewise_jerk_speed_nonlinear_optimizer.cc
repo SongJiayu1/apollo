@@ -71,7 +71,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
   if (reference_line_info_->ReachedDestination()) {
     return Status::OK();
   }
-  // 设置初始状态和约束边界
+  // 1. 设置初始状态和约束边界
   const auto problem_setups_status =
       SetUpStatesAndBounds(path_data, *speed_data);
   if (!problem_setups_status.ok()) {
@@ -84,7 +84,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
   std::vector<double> acceleration;
 
   const auto qp_start = std::chrono::system_clock::now();
-  // 使用 QP 进行速度点集平滑（构造了一个 PiecewiseJerkSpeedProblem）- 对 s, s', s'' 进行平滑
+  // 2. 使用 QP 进行速度点集平滑（构造了一个 PiecewiseJerkSpeedProblem）- 对 s, s', s'' 进行平滑
   // 这里的 speed_data 是 DP 得到的速度点集 (s, t)
   const auto qp_smooth_status =
       OptimizeByQP(speed_data, &distance, &velocity, &acceleration);
@@ -98,12 +98,12 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
     speed_data->clear();
     return qp_smooth_status;
   }
-  // 查看 SpeedLimit 是否可行
+  // 3. 查看 SpeedLimit 是否可行
   const bool speed_limit_check_status = CheckSpeedLimitFeasibility();
 
   if (speed_limit_check_status) {
     const auto curvature_smooth_start = std::chrono::system_clock::now();
-    // 对道路曲率进行平滑，为后面的 NLP 优化做准备
+    // 4. 对道路曲率进行平滑，为后面的 NLP 优化做准备
     const auto path_curvature_smooth_status = SmoothPathCurvature(path_data);
 
     const auto curvature_smooth_end = std::chrono::system_clock::now();
@@ -118,7 +118,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
     }
 
     const auto speed_limit_smooth_start = std::chrono::system_clock::now();
-    // 对 SpeedLimit 进行平滑
+    // 5. 对 SpeedLimit 进行平滑
     const auto speed_limit_smooth_status = SmoothSpeedLimit();
 
     const auto speed_limit_smooth_end = std::chrono::system_clock::now();
@@ -133,7 +133,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
     }
 
     const auto nlp_start = std::chrono::system_clock::now();
-    // 使用非线性规划进行速度规划
+    // 6. 使用非线性规划进行速度规划
     const auto nlp_smooth_status =
         OptimizeByNLP(&distance, &velocity, &acceleration);
 
@@ -180,7 +180,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::Process(
 
 Status PiecewiseJerkSpeedNonlinearOptimizer::SetUpStatesAndBounds(
     const PathData& path_data, const SpeedData& speed_data) {
-  // Set st problem dimensions
+  // 1. 拿到 ST 图的相关信息 Set st problem dimensions
   const StGraphData& st_graph_data =
       *reference_line_info_->mutable_st_graph_data();
   // TODO(Jinyun): move to confs
@@ -189,39 +189,43 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SetUpStatesAndBounds(
   total_time_ = st_graph_data.total_time_by_conf(); // ST 粗解的总时间
   num_of_knots_ = static_cast<int>(total_time_ / delta_t_) + 1; // 需要平滑的路径点的数量
 
-  // Set initial values - 初始的位置，速度，加速度
+  // 2. Set initial values - 初始的位置，速度，加速度
   s_init_ = 0.0;
   s_dot_init_ = st_graph_data.init_point().v();
   s_ddot_init_ = st_graph_data.init_point().a();
 
-  // Set s_dot bounary - 速度约束
-  s_dot_max_ = std::fmax(FLAGS_planning_upper_speed_limit,
-                         st_graph_data.init_point().v());
+  // 3. Set s_dot bounary - 速度约束
+  s_dot_max_ = std::fmax(FLAGS_planning_upper_speed_limit, // 30m/s
+                         st_graph_data.init_point().v());  // 最大速度不能比初始速度小。
 
-  // Set s_ddot boundary - 加速度约束
+  // 4. Set s_ddot boundary - 加速度约束
   const auto& veh_param =
       common::VehicleConfigHelper::GetConfig().vehicle_param();
   s_ddot_max_ = veh_param.max_acceleration();
   s_ddot_min_ = -1.0 * std::abs(veh_param.max_deceleration());
 
-  // Set s_dddot boundary - Jerk 约束
+  // 5. Set s_dddot boundary - Jerk 约束
   // TODO(Jinyun): allow the setting of jerk_lower_bound and move jerk config to
   // a better place
   s_dddot_min_ = -std::abs(FLAGS_longitudinal_jerk_lower_bound); // -4.0
   s_dddot_max_ = FLAGS_longitudinal_jerk_upper_bound; // 2.0
 
-  // Set s boundary
+  // 6. Set s boundary
   // 这里判断是否需要引入对于位置的软约束
+  // 6.1 位置约束（包含位置的软约束）
   if (FLAGS_use_soft_bound_in_nonlinear_speed_opt) {
     s_bounds_.clear();
     s_soft_bounds_.clear();
     // TODO(Jinyun): move to confs
     for (int i = 0; i < num_of_knots_; ++i) {
+      // 6.1.1 拿到当前时刻。
       double curr_t = i * delta_t_;
+      // 6.1.2 初始化位置约束以及位置软约束。
       double s_lower_bound = 0.0;
       double s_upper_bound = total_length_;
       double s_soft_lower_bound = 0.0;
       double s_soft_upper_bound = total_length_;
+      // 6.1.3 遍历所有障碍物的 st boundaries。
       for (const STBoundary* boundary : st_graph_data.st_boundaries()) {
         double s_lower = 0.0;
         double s_upper = 0.0;
@@ -229,27 +233,32 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SetUpStatesAndBounds(
           continue;
         }
         SpeedPoint sp;
+        // 6.1.4 根据边界的类型，来设置不同的边界约束。
         switch (boundary->boundary_type()) {
-          // 根据边界的类型，来设置不同的边界约束
-          case STBoundary::BoundaryType::STOP:
-          case STBoundary::BoundaryType::YIELD:
+          // 1）STOP 和 YIELD 执行同样的代码块。
+          case STBoundary::BoundaryType::STOP: 
+          case STBoundary::BoundaryType::YIELD: 
             s_upper_bound = std::fmin(s_upper_bound, s_upper);
             s_soft_upper_bound = std::fmin(s_soft_upper_bound, s_upper);
             break;
+          // 2) FOLLOW 的时候 s_upper 的基础上减 3m 做 upper bound。
           case STBoundary::BoundaryType::FOLLOW:
             s_upper_bound =
                 std::fmin(s_upper_bound, s_upper - FLAGS_follow_min_distance);
+            // 从 speed 点集上根据 curr_t 插值拿到当前的 SpeedPoint。
             if (!speed_data.EvaluateByTime(curr_t, &sp)) {
               const std::string msg =
                   "rough speed profile estimation for soft follow fence failed";
               AERROR << msg;
               return Status(ErrorCode::PLANNING_ERROR, msg);
             }
+            // 计算 soft upper bound。
             s_soft_upper_bound =
                 std::fmin(s_soft_upper_bound,
                           s_upper - FLAGS_follow_min_distance -
                               std::min(7.0, FLAGS_follow_time_buffer * sp.v()));
             break;
+          // 3) OVERTAKE 的时候在 s_lower 的基础上增加 10 m 做 soft lower bound。
           case STBoundary::BoundaryType::OVERTAKE:
             s_lower_bound = std::fmax(s_lower_bound, s_lower);
             s_soft_lower_bound = std::fmax(s_soft_lower_bound, s_lower + 10.0);
@@ -267,7 +276,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SetUpStatesAndBounds(
       s_soft_bounds_.emplace_back(s_soft_lower_bound, s_soft_upper_bound);
       s_bounds_.emplace_back(s_lower_bound, s_upper_bound);
     }
-  } else { // 不引入对于位置的软约束
+  } else { // 6.2 位置约束（不引入对于位置的软约束）
     s_bounds_.clear();
     // TODO(Jinyun): move to confs
     for (int i = 0; i < num_of_knots_; ++i) {
@@ -323,13 +332,14 @@ bool PiecewiseJerkSpeedNonlinearOptimizer::CheckSpeedLimitFeasibility() {
   return true;
 }
 // 限速曲线平滑
-// 在速度约束里，关于速度的约束也是和 s 有关的，
-// 速度边界来自于地图和 speed_decider 中，所以是不可导的。
-// Apollo 这里的处理和曲率一样，先对速度约束进行分段多项式拟合，
+// 在速度约束里，关于速度的约束也是和 s 有关的，速度边界来自于地图和 speed_decider 中，所以是不可导的。
+// Apollo 这里的处理和曲率一样，先对速度约束进行分段多项式拟合（构造一个 PiecewiseJerkPath 问题），
 // 产生 PiecewiseJerkTrajectory1d 曲线，再进行计算。
 Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothSpeedLimit() {
   // using piecewise_jerk_path to fit a curve of speed_ref
   // TODO(Hongyi): move smooth configs to gflags
+
+  // 1. 用 speed_limit_ 构造 speed_ref，对 speed_ref  进行平滑。
   double delta_s = 2.0;
   std::vector<double> speed_ref;
   for (int i = 0; i < 100; ++i) {
@@ -337,6 +347,8 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothSpeedLimit() {
     double limit = speed_limit_.GetSpeedLimitByS(path_s);
     speed_ref.emplace_back(limit);
   }
+
+  // 2. 构造优化问题。
   std::array<double, 3> init_state = {speed_ref[0], 0.0, 0.0};
   PiecewiseJerkPathProblem piecewise_jerk_problem(speed_ref.size(), delta_s,
                                                   init_state);
@@ -365,6 +377,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothSpeedLimit() {
   opt_x = piecewise_jerk_problem.opt_x();
   opt_dx = piecewise_jerk_problem.opt_dx();
   opt_ddx = piecewise_jerk_problem.opt_ddx();
+  // 3. 构造 speed limit 的平滑曲线。
   PiecewiseJerkTrajectory1d smoothed_speed_limit(opt_x.front(), opt_dx.front(),
                                                  opt_ddx.front());
 
@@ -383,19 +396,22 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothPathCurvature(
     const PathData& path_data) {
   // using piecewise_jerk_path to fit a curve of path kappa profile
   // TODO(Jinyun): move smooth configs to gflags
+  // 1. 拿到 path 的 cartesian_path，是一个 vector<PathPoint> 类型。
   const auto& cartesian_path = path_data.discretized_path();
   const double delta_s = 0.5;
+  // 2. 计算 kappa 的参考值，从 path data 计算得到。
   std::vector<double> path_curvature;
   for (double path_s = cartesian_path.front().s();
        path_s < cartesian_path.back().s() + delta_s; path_s += delta_s) {
     const auto& path_point = cartesian_path.Evaluate(path_s);
     path_curvature.push_back(path_point.kappa());
   }
+  // 3. 拿到初始状态的信息（初始点的 kappa, dkappa, ddkappa）。
   const auto& path_init_point = cartesian_path.front();
   std::array<double, 3> init_state = {path_init_point.kappa(),
                                       path_init_point.dkappa(),
                                       path_init_point.ddkappa()};
-  // 对曲率，曲率的一阶导，二阶导进行平滑
+  // 4. 构造优化问题，对曲率，曲率的一阶导，二阶导进行平滑
   PiecewiseJerkPathProblem piecewise_jerk_problem(path_curvature.size(),
                                                   delta_s, init_state);
   piecewise_jerk_problem.set_x_bounds(-1.0, 1.0);
@@ -424,8 +440,8 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothPathCurvature(
   opt_dx = piecewise_jerk_problem.opt_dx();
   opt_ddx = piecewise_jerk_problem.opt_ddx();
 
-  // 这里用 PiecewiseJerkTrajectory1d 这个类保存曲率与 s 的曲线，
-  // 这样可以利用类中的 Evaluate() 函数计算曲率的导数来计算目标函数梯度
+  // 5. 这里用 PiecewiseJerkTrajectory1d 这个类保存曲率与 s 的曲线，
+  // 这样可以利用类中的 Evaluate() 函数计算曲率的导数来计算目标函数梯度。
   PiecewiseJerkTrajectory1d smoothed_path_curvature(
       opt_x.front(), opt_dx.front(), opt_ddx.front());
 
@@ -444,28 +460,36 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::SmoothPathCurvature(
 Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByQP(
     SpeedData* const speed_data, std::vector<double>* distance,
     std::vector<double>* velocity, std::vector<double>* acceleration) {
-
+  // 1. 初始状态
   std::array<double, 3> init_states = {s_init_, s_dot_init_, s_ddot_init_};
   // s_init_ = 0.0;
   // s_dot_init_ = st_graph_data.init_point().v();
   // s_ddot_init_ = st_graph_data.init_point().a();
-  
+
+  // 2. 构造优化问题。
   PiecewiseJerkSpeedProblem piecewise_jerk_problem(num_of_knots_, delta_t_,
                                                    init_states);
+  // 3. 设置优化问题的 constraint。
+  // 3.1 速度约束                                                 
   piecewise_jerk_problem.set_dx_bounds(
       0.0, std::fmax(FLAGS_planning_upper_speed_limit, init_states[1]));
+  // 3.2 加速度约束
   piecewise_jerk_problem.set_ddx_bounds(s_ddot_min_, s_ddot_max_);
+  // 3.3 Jerk 约束
   piecewise_jerk_problem.set_dddx_bound(s_dddot_min_, s_dddot_max_);
+  // 3.4 位置约束
   piecewise_jerk_problem.set_x_bounds(s_bounds_);
 
   // TODO(Jinyun): parameter tunnings
+  // 4. 设置权重
   const auto& config =
       config_.piecewise_jerk_nonlinear_speed_optimizer_config();
   piecewise_jerk_problem.set_weight_x(0.0);
   piecewise_jerk_problem.set_weight_dx(0.0);
-  piecewise_jerk_problem.set_weight_ddx(config.acc_weight());
-  piecewise_jerk_problem.set_weight_dddx(config.jerk_weight());
-
+  piecewise_jerk_problem.set_weight_ddx(config.acc_weight());   // acc_weight: 2.0
+  piecewise_jerk_problem.set_weight_dddx(config.jerk_weight()); // jerk_weight: 3.0
+  // 这里的 config 见：modules/planning/conf/planning_config.pb.txt
+  // 5. 计算位置的参考值。
   std::vector<double> x_ref;
   for (int i = 0; i < num_of_knots_; ++i) {
     const double curr_t = i * delta_t_;
@@ -475,8 +499,8 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByQP(
     x_ref.emplace_back(sp.s());
   }
   piecewise_jerk_problem.set_x_ref(config.ref_s_weight(), std::move(x_ref));
-
-  // Solve the problem
+  // ref_s_weight: 100.0
+  // 6. Solve the problem
   if (!piecewise_jerk_problem.Optimize()) {
     const std::string msg =
         "Speed Optimization by Quadratic Programming failed. "
@@ -484,7 +508,7 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByQP(
     AERROR << msg;
     return Status(ErrorCode::PLANNING_ERROR, msg);
   }
-  // 将平滑后的 s, s', s'' 存入 distance，velocity，acceleration 这三个 vector 容器。
+  // 7. 将平滑后的 s, s', s'' 存入 distance，velocity，acceleration 这三个 vector 容器。
   *distance = piecewise_jerk_problem.opt_x();
   *velocity = piecewise_jerk_problem.opt_dx();
   *acceleration = piecewise_jerk_problem.opt_ddx();
@@ -545,25 +569,26 @@ Status PiecewiseJerkSpeedNonlinearOptimizer::OptimizeByNLP(
     // TODO(Jinyun): move to confs
     ptr_interface->set_w_reference_spatial_distance(10.0);
   } else {
-    std::vector<double> spatial_potantial(num_of_knots_, total_length_);
+    std::vector<double> spatial_potantial(num_of_knots_, total_length_); // ST 粗解的总长度
     ptr_interface->set_reference_spatial_distance(spatial_potantial);
     ptr_interface->set_w_reference_spatial_distance(
-        config.s_potential_weight());
+        config.s_potential_weight()); // s_potential_weight: 0.05
   }
-
+  // 6. 如果使用了 soft bounds，则需要设置 soft bounds 及相应的权重。
   if (FLAGS_use_soft_bound_in_nonlinear_speed_opt) {
-    ptr_interface->set_soft_safety_bounds(s_soft_bounds_);
-    ptr_interface->set_w_soft_s_bound(config.soft_s_bound_weight());
+    ptr_interface->set_soft_safety_bounds(s_soft_bounds_); 
+    ptr_interface->set_w_soft_s_bound(config.soft_s_bound_weight()); 
+    // soft_s_bound_weight: 1e6
   }
-  // 6. 设置优化变量的权重值
+  // 7. 设置优化变量的权重值
   // 包括加速度、加加速度、向心加速度权重。
-  ptr_interface->set_w_overall_a(config.acc_weight());
-  ptr_interface->set_w_overall_j(config.jerk_weight());
-  ptr_interface->set_w_overall_centripetal_acc(config.lat_acc_weight());
+  ptr_interface->set_w_overall_a(config.acc_weight()); // 2.0
+  ptr_interface->set_w_overall_j(config.jerk_weight()); // 3.0
+  ptr_interface->set_w_overall_centripetal_acc(config.lat_acc_weight()); // 1000.0
   // 设置参考速度及参考速度权重，这边的参考速度直接设为了 cruise_speed。
-  ptr_interface->set_reference_speed(cruise_speed_);
-  ptr_interface->set_w_reference_speed(config.ref_v_weight());
-  // 7. 构造接口类的智能指针来存放优化问题的具体形式 ，并调用 IPOPT 进行求解
+  ptr_interface->set_reference_speed(cruise_speed_); 
+  ptr_interface->set_w_reference_speed(config.ref_v_weight()); // 5.0
+  // 8. 构造接口类的智能指针来存放优化问题的具体形式 ，并调用 IPOPT 进行求解
   Ipopt::SmartPtr<Ipopt::TNLP> problem = ptr_interface;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> app = IpoptApplicationFactory();
 

@@ -70,6 +70,7 @@ MPCController::MPCController() : name_("MPC Controller") {
 
 MPCController::~MPCController() { CloseLogFile(); }
 
+// 初始化函数，加载车辆配置信息（如：速度，加速度和前轮转角的限制，车辆的参数）
 bool MPCController::LoadControlConf(const ControlConf *control_conf) {
   if (!control_conf) {
     AERROR << "[MPCController] control_conf = nullptr";
@@ -168,6 +169,7 @@ void MPCController::InitializeFilters(const ControlConf *control_conf) {
       control_conf->mpc_controller_conf().mean_filter_window_size()));
 }
 
+// 初始化 A，B，C 矩阵及它们离散化后的矩阵 Ad，Bd，Cd；初始化权重矩阵 Q 和 R；初始化 K 矩阵。
 Status MPCController::Init(std::shared_ptr<DependencyInjector> injector,
                            const ControlConf *control_conf) {
   if (!LoadControlConf(control_conf)) {
@@ -246,7 +248,7 @@ void MPCController::CloseLogFile() {
     mpc_log_file_.close();
   }
 }
-
+ 
 double MPCController::Wheel2SteerPct(const double wheel_angle) {
   return wheel_angle / wheel_single_direction_max_degree_ * 100;
 }
@@ -255,6 +257,7 @@ void MPCController::Stop() { CloseLogFile(); }
 
 std::string MPCController::Name() const { return name_; }
 
+// 加载 MPC 增益序列，包括：横向偏差增益序列，航向偏差增益序列
 void MPCController::LoadMPCGainScheduler(
     const MPCControllerConf &mpc_controller_conf) {
   const auto &lat_err_gain_scheduler =

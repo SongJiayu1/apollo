@@ -61,7 +61,7 @@ class MPCController : public Controller {
   virtual ~MPCController();
 
   /**
-   * @brief initialize MPC Controller
+   * @brief initialize 
    * @param control_conf control configurations
    * @return Status initialization status
    */
@@ -114,7 +114,7 @@ class MPCController : public Controller {
 
   void ComputeLongitudinalErrors(const TrajectoryAnalyzer *trajectory,
                                  SimpleMPCDebug *debug);
-
+  
   bool LoadControlConf(const ControlConf *control_conf);
 
   void InitializeFilters(const ControlConf *control_conf);

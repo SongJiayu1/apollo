@@ -53,7 +53,7 @@ PiecewiseJerkSpeedNonlinearIpoptInterface::
 bool PiecewiseJerkSpeedNonlinearIpoptInterface::get_nlp_info(
     int &n, int &m, int &nnz_jac_g, int &nnz_h_lag,
     IndexStyleEnum &index_style) {
-  // 定义了优化的变量的个数，每个点包含 3 个优化变量，s, s', s''
+  // 1. 定义了优化的变量的个数，每个点包含 3 个优化变量，s, s', s''
   num_of_variables_ = num_of_points_ * 3;
 
   if (use_soft_safety_bound_) {

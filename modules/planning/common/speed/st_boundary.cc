@@ -94,6 +94,7 @@ STBoundary STBoundary::CreateInstanceAccurate(
   std::vector<std::pair<STPoint, STPoint>> point_pairs;
   for (size_t i = 0; i < lower_points.size(); ++i) {
     point_pairs.emplace_back(
+        // 一个 upper_point 和一个 lower_point 构成一个 point pair。
         STPoint(lower_points.at(i).s(), lower_points.at(i).t()),
         STPoint(upper_points.at(i).s(), upper_points.at(i).t()));
   }
@@ -124,7 +125,7 @@ bool STBoundary::GetUnblockSRange(const double curr_time, double* s_upper,
   CHECK_NOTNULL(s_upper);
   CHECK_NOTNULL(s_lower);
 
-  *s_upper = FLAGS_speed_lon_decision_horizon;
+  *s_upper = FLAGS_speed_lon_decision_horizon; // 200m
   *s_lower = 0.0;
   if (curr_time < min_t_ || curr_time > max_t_) {
     return true;
